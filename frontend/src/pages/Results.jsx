@@ -101,10 +101,8 @@ export default function Results() {
                     }
                 }
 
-                // Time filtering based on current time is disabled as requested by the user, 
-                // so we can see all trains that run on the selected day regardless of current hour.
-                /*
-                if (dateParam && searchMode !== "train") {
+                // Time filtering based on current time (hide trains already departed if searching for today)
+                if (dateParam) {
                     const journeyDate = new Date(dateParam);
                     const now = new Date();
                     const isToday = journeyDate.toDateString() === now.toDateString();
@@ -112,6 +110,7 @@ export default function Results() {
                     if (isToday) {
                         const currentMinutes = now.getHours() * 60 + now.getMinutes();
                         filtered = filtered.filter(t => {
+                            // Extract departure time, handling both API responses (route vs train search)
                             const depTime = t.fromStation?.departureTime || t.departureTime || "00:00";
                             const [h, m] = depTime.split(':').map(Number);
                             const depMinutes = h * 60 + m;
@@ -119,7 +118,6 @@ export default function Results() {
                         });
                     }
                 }
-                */
 
                 setResults(filtered);
 
