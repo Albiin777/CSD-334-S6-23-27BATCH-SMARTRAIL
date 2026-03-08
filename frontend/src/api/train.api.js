@@ -44,6 +44,19 @@ const api = {
         return await res.json();
     },
 
+    // Get coach load balancing allocation for seat selection
+    getCoachAllocation: async (trainNumber, classCode, date, source, destination, passengers) => {
+        const params = new URLSearchParams({ classCode });
+        if (date) params.append('date', date);
+        if (source) params.append('source', source);
+        if (destination) params.append('destination', destination);
+        if (passengers) params.append('passengers', passengers);
+        const res = await fetch(`${API_BASE_URL}/trains/${trainNumber}/coach-allocation?${params.toString()}`);
+        if (!res.ok) throw new Error('Failed to fetch coach allocation');
+        return await res.json();
+    },
+
+
     // --- Stations ---
 
     // Search stations

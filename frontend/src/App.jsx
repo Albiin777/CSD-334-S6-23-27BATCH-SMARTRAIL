@@ -298,7 +298,7 @@ export default function App() {
             <Route path="/passenger-details" element={<PassengerDetails />} />
             <Route path="/payment" element={<PaymentGateway />} />
             <Route path="/pnr-status" element={
-              <div className="min-h-screen bg-[#0f172a] pt-20">
+              <div className="min-h-screen bg-[#0f172a] pt-24">
                 <Pnrstatus />
               </div>
             } />

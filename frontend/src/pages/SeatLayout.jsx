@@ -101,6 +101,7 @@ export default function SeatLayout() {
     const [passengerCount, setPassengerCount] = useState(Number(searchParams.get("passengers")) || 1);
     const [isEditingPassengers, setIsEditingPassengers] = useState(false);
     const [farePerPerson, setFarePerPerson] = useState(0);
+    const [coachAllocation, setCoachAllocation] = useState(null); // scored coach list from API
 
     const [trainRunsOnDate, setTrainRunsOnDate] = useState(true);
 
@@ -180,6 +181,35 @@ export default function SeatLayout() {
         };
         fetchData();
     }, [trainNumber, classType, journeyDate, isTrainSearchMode]);
+
+    // Fetch coach allocation scores (load balancing)
+    useEffect(() => {
+        if (!trainNumber || !classType || isTrainSearchMode) return;
+        let targetClass = classType;
+        const match = classType.match(/\(([^)]+)\)$/);
+        if (match) targetClass = match[1];
+        else if (classType.toLowerCase() === "general") targetClass = "2S";
+
+        const srcCode = source ? (source.match(/\(([^)]+)\)$/)?.[1] || source) : undefined;
+        const dstCode = destination ? (destination.match(/\(([^)]+)\)$/)?.[1] || destination) : undefined;
+
+        const pCount = parseInt(passengerCount) || 1;
+        api.getCoachAllocation(trainNumber, targetClass, journeyDate, srcCode, dstCode, pCount)
+            .then(data => setCoachAllocation(data?.coaches || null))
+            .catch(() => setCoachAllocation(null));
+    }, [trainNumber, classType, journeyDate, source, destination, isTrainSearchMode, passengerCount]);
+
+
+    // Auto-select the first available/visible coach once allocation is loaded
+    useEffect(() => {
+        if (coachAllocation && coachAllocation.length > 0) {
+            const firstAvailable = coachAllocation.find(c => c.isVisible && c.status !== 'FULL');
+            if (firstAvailable) {
+                setSelectedCoachId(firstAvailable.coachId);
+            }
+        }
+    }, [coachAllocation]);
+
 
     // Fetch fare
     useEffect(() => {
@@ -292,6 +322,17 @@ export default function SeatLayout() {
     const currentCoach = layoutData?.coaches?.find(c => c.coachId === selectedCoachId);
     const rows = currentCoach ? groupSeatsByRow(currentCoach.seats, currentCoach.rowStructure) : [];
     const hasSide = rows.some(r => r.sideSeats.length > 0);
+
+    // Helper: get allocation info for a given coachId
+    const getAllocInfo = (coachId) => coachAllocation?.find(c => c.coachId === coachId) || null;
+
+    // Badge config per status
+    const STATUS_BADGE = {
+        RECOMMENDED: { label: '★ Best', bg: '#134e26', color: '#4ab86d', border: '#4ab86d' },
+        AVAILABLE:   { label: 'Open',   bg: '#1D2332', color: '#94a3b8', border: '#334155' },
+        NEARLY_FULL: { label: '⚠ Filling', bg: '#431407', color: '#fb923c', border: '#c2410c' },
+        FULL:        { label: 'Full',   bg: '#2d1414', color: '#ef4444', border: '#7f1d1d' },
+    };
 
     return (
         <div style={{ backgroundColor: '#0f172a' }} className="min-h-screen pt-20 pb-20 px-4 font-sans text-gray-100 relative">
@@ -448,19 +489,30 @@ export default function SeatLayout() {
                         <div className="lg:hidden mb-4">
                             <h3 className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-3 ml-1">Select Coach</h3>
                             <div className="flex gap-2 overflow-x-auto pb-2 snap-x snap-mandatory" style={{ scrollbarWidth: 'none' }}>
-                                {layoutData.coaches.map(coach => (
-                                    <button
-                                        key={coach.coachId}
-                                        onClick={() => setSelectedCoachId(coach.coachId)}
-                                        style={{ backgroundColor: selectedCoachId === coach.coachId ? '#4ab86d' : '#383838' }}
-                                        className={`flex-shrink-0 snap-center px-4 py-2 rounded-full text-sm font-bold transition-all duration-200 flex items-center gap-2 ${selectedCoachId === coach.coachId ? "text-white shadow-lg" : "text-gray-300 hover:text-white"}`}
-                                    >
-                                        <span className="font-mono">{coach.coachId}</span>
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${selectedCoachId === coach.coachId ? "bg-white/20 text-white" : "bg-white/10 text-gray-400"}`}>
-                                            {coach.seats?.filter(s => !s.isBooked).length}
-                                        </span>
-                                    </button>
-                                ))}
+                                {layoutData.coaches
+                                    .filter(coach => {
+                                        const alloc = getAllocInfo(coach.coachId);
+                                        // Only show coaches that are visible and NOT full
+                                        return (!alloc || alloc.isVisible) && alloc?.status !== 'FULL';
+                                    })
+                                    .map(coach => {
+                                        const isActive = selectedCoachId === coach.coachId;
+                                        return (
+                                            <button
+                                                key={coach.coachId}
+                                                onClick={() => setSelectedCoachId(coach.coachId)}
+                                                style={{ backgroundColor: isActive ? '#4ab86d' : '#383838' }}
+                                                className={`flex-shrink-0 snap-center px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 flex items-center gap-2 ${
+                                                    isActive ? 'text-white shadow-lg' : 'text-gray-300 hover:text-white'
+                                                }`}
+                                            >
+                                                <span className="font-mono">{coach.coachId}</span>
+                                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isActive ? "bg-white/20 text-white" : "bg-white/10 text-gray-400"}`}>
+                                                    {coach.seats?.filter(s => !s.isBooked).length}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
                             </div>
                         </div>
 
@@ -469,19 +521,35 @@ export default function SeatLayout() {
                             <div className="bg-[#1D2332] rounded-2xl p-4 sticky top-24 border border-white/5 shadow-xl">
                                 <h3 className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-4 ml-2">Select Coach</h3>
                                 <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
-                                    {layoutData.coaches.map(coach => (
-                                        <button
-                                            key={coach.coachId}
-                                            onClick={() => setSelectedCoachId(coach.coachId)}
-                                            style={{ backgroundColor: selectedCoachId === coach.coachId ? '#4ab86d' : '#383838' }}
-                                            className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex justify-between items-center ${selectedCoachId === coach.coachId ? "text-white border border-green-400 shadow-md" : "text-gray-300 hover:text-white border border-gray-600"}`}
-                                        >
-                                            <span className="font-mono font-bold">{coach.coachId}</span>
-                                            <span className={`text-xs px-2 py-0.5 rounded ${selectedCoachId === coach.coachId ? "bg-white/20 text-white" : "bg-white/10 text-gray-400"}`}>
-                                                {coach.seats?.filter(s => !s.isBooked).length}
-                                            </span>
-                                        </button>
-                                    ))}
+                                    {layoutData.coaches
+                                        .filter(coach => {
+                                            const alloc = getAllocInfo(coach.coachId);
+                                            // Only show coaches that are visible and NOT full
+                                            return (!alloc || alloc.isVisible) && alloc?.status !== 'FULL';
+                                        })
+                                        .map(coach => {
+                                            const isActive = selectedCoachId === coach.coachId;
+                                            return (
+                                                <button
+                                                    key={coach.coachId}
+                                                    onClick={() => setSelectedCoachId(coach.coachId)}
+                                                    style={{
+                                                        backgroundColor: isActive ? '#4ab86d' : '#383838',
+                                                        borderColor: isActive ? '#4ab86d' : '#4b5563'
+                                                    }}
+                                                    className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex justify-between items-center border ${
+                                                        isActive ? 'text-white shadow-md' : 'text-gray-300 hover:text-white'
+                                                    }`}
+                                                >
+                                                    <span className="font-mono font-bold">{coach.coachId}</span>
+                                                    <span className={`text-xs px-2 py-0.5 rounded ${
+                                                        isActive ? 'bg-white/20 text-white' : 'bg-white/10 text-gray-400'
+                                                    }`}>
+                                                        {coach.seats?.filter(s => !s.isBooked).length} free
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
                                 </div>
                             </div>
                         </div>

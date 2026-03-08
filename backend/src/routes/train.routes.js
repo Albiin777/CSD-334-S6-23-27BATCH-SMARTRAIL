@@ -9,7 +9,8 @@ import {
     getSeatLayout,
     getAvailability,
     getStationDetails,
-    getFare
+    getFare,
+    getCoachAllocation
 } from '../controllers/train.controller.js';
 
 const router = Router();
@@ -21,6 +22,7 @@ router.get('/:trainNumber', getTrainDetails);
 router.get('/:trainNumber/schedule', getTrainSchedule);
 router.get('/:trainNumber/seat-layout', getSeatLayout);
 router.get('/:trainNumber/availability', getAvailability);
+router.get('/:trainNumber/coach-allocation', getCoachAllocation);
 router.get('/:trainNumber/fare', getFare);
 router.get('/station/:stationCode', getStationDetails);
 

@@ -1,6 +1,7 @@
 
 import { dataStore } from '../services/train.service.js';
 import { generateSeats } from '../services/seatLayout.service.js';
+import { computeCoachAllocations } from '../services/coachLoadBalance.service.js';
 import { supabase } from '../config/supabaseClient.js';
 
 // Classes that are not bookable and should be hidden from seat layout/availability
@@ -472,3 +473,111 @@ export async function getFare(req, res) {
     });
 }
 
+/**
+ * GET /:trainNumber/coach-allocation?classCode=SL&date=YYYY-MM-DD&source=SRC&destination=DST
+ *
+ * Returns coaches enriched with load balancing scores and activation status,
+ * filtered by the requested class. Used by the seat selection UI to show
+ * only recommended / available coaches progressively from center outward.
+ */
+export async function getCoachAllocation(req, res) {
+    try {
+        const { trainNumber } = req.params;
+        const { classCode, date, source, destination, passengers } = req.query;
+        const passengerCount = Math.max(1, parseInt(passengers) || 1);
+
+        if (!classCode) {
+            return res.status(400).json({ error: 'classCode query param is required' });
+        }
+
+        // 1. Load seat layout
+        const layout = dataStore.seatLayouts.find(t => t.trainNumber === trainNumber);
+        if (!layout) {
+            return res.status(404).json({ error: 'Layout not found for train ' + trainNumber });
+        }
+
+        // 2. Filter coaches by requested classCode, exclude non-bookable
+        const filteredCoaches = layout.coaches
+            .filter(c => !NON_BOOKABLE.has(c.classCode) && c.classCode === classCode)
+            .map(coach => {
+                const coachType = coach.coachTypeId
+                    ? dataStore.coachTypesMap.get(coach.coachTypeId)
+                    : null;
+                const totalSeats = coach.totalSeats ?? coachType?.totalSeats ?? 0;
+                const rowStructure = coachType?.layout?.rowStructure ?? null;
+                return {
+                    coachId: coach.coachId || coach.coachNumber,
+                    classCode: coach.classCode,
+                    coachTypeId: coach.coachTypeId,
+                    totalSeats,
+                    rowStructure
+                };
+            })
+            .filter(c => c.totalSeats > 0);
+
+        if (filteredCoaches.length === 0) {
+            return res.json({ trainNumber, classCode, coaches: [] });
+        }
+
+        // 3. Fetch range indices for overlap check (same logic as getAvailability)
+        const train = dataStore.trains.find(t => t.trainNumber === trainNumber);
+        let fromIndex = -1, toIndex = 999;
+        if (train && train.schedule && source && destination) {
+            fromIndex = train.schedule.findIndex(
+                s => s.stationCode.toLowerCase() === source.toLowerCase()
+            );
+            toIndex = train.schedule.findIndex(
+                s => s.stationCode.toLowerCase() === destination.toLowerCase()
+            );
+        }
+
+        // 4. Fetch CNF passengers for this train + date whose journey overlaps the requested segment
+        let confirmedPassengers = [];
+        if (date) {
+            const { data: bookings, error: bookingErr } = await supabase
+                .from('pnr_bookings')
+                .select(`
+                    id, fromIndex, toIndex, classCode,
+                    passengers ( seatNumber, status )
+                `)
+                .eq('trainNumber', trainNumber)
+                .eq('journeyDate', date)
+                .eq('classCode', classCode);
+
+            if (bookingErr) console.error('Coach allocation booking fetch error:', bookingErr.message);
+
+            if (bookings) {
+                for (const booking of bookings) {
+                    // Only count if journey overlaps the requested segment
+                    const overlaps = fromIndex === -1 || toIndex === 999 ||
+                        (booking.fromIndex < toIndex && booking.toIndex > fromIndex);
+                    if (!overlaps) continue;
+
+                    for (const p of (booking.passengers || [])) {
+                        if (p.status === 'CNF' && p.seatNumber) {
+                            confirmedPassengers.push(p);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Run the scoring engine (passenger-count aware)
+        const scoredCoaches = computeCoachAllocations(filteredCoaches, confirmedPassengers, passengerCount);
+
+        return res.json({
+            trainNumber,
+            classCode,
+            passengerCount,
+            date: date || null,
+            source: source || null,
+            destination: destination || null,
+            totalCoaches: filteredCoaches.length,
+            coaches: scoredCoaches
+        });
+
+    } catch (err) {
+        console.error('Coach allocation error:', err);
+        return res.status(500).json({ error: 'Failed to compute coach allocation: ' + err.message });
+    }
+}

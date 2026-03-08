@@ -6,7 +6,7 @@ export default function TrainSchedule() {
     const [trainQuery, setTrainQuery] = useState("");
     const [trainSuggestions, setTrainSuggestions] = useState([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
-    
+
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [scheduleData, setScheduleData] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -30,9 +30,9 @@ export default function TrainSchedule() {
 
     const fetchSuggestions = (query) => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        if (!query || query.length < 2) { 
-            setTrainSuggestions([]); 
-            return; 
+        if (!query || query.length < 2) {
+            setTrainSuggestions([]);
+            return;
         }
 
         debounceRef.current = setTimeout(async () => {
@@ -72,7 +72,7 @@ export default function TrainSchedule() {
                 if (detailsResponse.data) {
                     trainDetails = detailsResponse.data;
                 }
-            } catch(e) {} // fine, we'll use fallback info
+            } catch (e) { } // fine, we'll use fallback info
 
             setScheduleData({ ...trainDetails, schedule: scheduleArray });
         } catch (err) {
@@ -132,10 +132,10 @@ export default function TrainSchedule() {
     };
 
     return (
-        <div id="schedule-section" className="relative max-w-6xl mx-auto mt-20 mb-24 px-4 scroll-mt-32">
-            <div className="text-center lg:text-left">
+        <div id="schedule-section" className="relative max-w-6xl mx-auto mt-32 mb-28 px-4 scroll-mt-32">
+            <div className="text-center lg:text-left mb-2">
                 <h2 className="text-4xl sm:text-5xl font-black text-white uppercase tracking-tight">
-                    Train Schedule
+                    View Train Schedules
                 </h2>
                 <p className="text-base text-slate-400 mt-2 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
                     View the scheduled arrival and departure times.
@@ -214,7 +214,7 @@ export default function TrainSchedule() {
             {/* TIMELINE UI */}
             {scheduleData && !loading && Object.keys(timelineDataByDay).length > 0 && (
                 <div className="bg-[#1D2332] rounded-2xl md:rounded-[28px] border border-white/5 overflow-hidden flex flex-col max-h-[700px] relative">
-                    
+
                     {/* Header Banner */}
                     <div className="bg-white/5 p-6 border-b border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0 shadow-sm z-40 sticky top-0 backdrop-blur-md">
                         <div>
@@ -241,10 +241,10 @@ export default function TrainSchedule() {
 
                         {/* Timeline Scrollable Container */}
                         <div className="overflow-y-auto custom-scrollbar flex-1 relative px-0 pb-12">
-                            
+
                             <div className="flex flex-col">
                                 {Object.entries(timelineDataByDay).map(([day, segments], dayIndex) => {
-                                    
+
                                     return (
                                         <div key={`day-${day}`} className="mb-0">
                                             {/* DAY HEADER */}
@@ -258,7 +258,7 @@ export default function TrainSchedule() {
                                             {segments.map((segment, segmentIndexInDay) => {
                                                 const { mainStop, intermediates } = segment;
                                                 const hasIntermediates = intermediates.length > 0;
-                                                
+
                                                 // These are rough definitions for the timeline line UI
                                                 const isFirst = globalSegmentIdx === 0;
                                                 const isLastDay = dayIndex === Object.keys(timelineDataByDay).length - 1;
@@ -270,13 +270,13 @@ export default function TrainSchedule() {
                                                 return (
                                                     <React.Fragment key={`segment-${currentIdx}`}>
                                                         {/* MAIN STOP ROW */}
-                                                        <div 
+                                                        <div
                                                             onClick={() => {
                                                                 if (hasIntermediates) toggleSegment(currentIdx);
                                                             }}
                                                             className={`flex items-stretch w-full transition-colors relative group ${hasIntermediates ? 'cursor-pointer hover:bg-white/[0.04]' : 'hover:bg-white/[0.02]'}`}
                                                         >
-                                                            
+
                                                             {/* LEFT COLUMN: Arrival Time / Station Code */}
                                                             <div className="w-16 sm:w-24 shrink-0 flex flex-col items-center justify-center py-4 text-center">
                                                                 <span className="text-sm font-black text-white">{mainStop.stationCode}</span>
@@ -291,12 +291,12 @@ export default function TrainSchedule() {
                                                             <div className="w-8 shrink-0 flex flex-col items-center justify-center relative hidden sm:flex">
                                                                 {!isFirst && <div className="absolute top-0 h-1/2 w-[2px] bg-[#60A5FA]/80"></div>}
                                                                 {(!isLast || hasIntermediates) && <div className="absolute bottom-0 h-[100%] w-[2px] bg-[#60A5FA]/80"></div>}
-                                                                
+
                                                                 {/* Central Dot */}
                                                                 <div className={`w-3.5 h-3.5 rounded-full z-10 transition-colors
-                                                                    ${isFirst ? 'bg-[#60A5FA] ring-[4px] ring-[#1D2332]/80 group-hover:bg-blue-300' 
-                                                                    : isLast ? 'bg-[#60A5FA] ring-[4px] ring-[#1D2332]/80 group-hover:bg-blue-300' 
-                                                                    : 'bg-[#60A5FA] border-[2px] border-[#1D2332] group-hover:bg-blue-300'}`}
+                                                                    ${isFirst ? 'bg-[#60A5FA] ring-[4px] ring-[#1D2332]/80 group-hover:bg-blue-300'
+                                                                        : isLast ? 'bg-[#60A5FA] ring-[4px] ring-[#1D2332]/80 group-hover:bg-blue-300'
+                                                                            : 'bg-[#60A5FA] border-[2px] border-[#1D2332] group-hover:bg-blue-300'}`}
                                                                 ></div>
                                                             </div>
 
@@ -342,7 +342,7 @@ export default function TrainSchedule() {
                                                         {isExpanded && hasIntermediates && (
                                                             <div className="flex w-full relative">
                                                                 <div className="w-16 sm:w-24 shrink-0"></div>
-                                                                
+
                                                                 {/* Continuing blue line through intermediates */}
                                                                 <div className="w-8 shrink-0 flex items-center justify-center relative hidden sm:flex">
                                                                     <div className="absolute top-0 bottom-0 w-[2px] bg-[#60A5FA]/30"></div>
@@ -354,7 +354,7 @@ export default function TrainSchedule() {
                                                                             <div key={`int-${currentIdx}-${intIdx}`} className="flex justify-between items-center text-slate-500 py-1.5 pl-3 border-l-2 border-white/10 ml-2 hover:border-[#60A5FA]/40 hover:bg-white/[0.04] rounded-r-md transition-colors cursor-default">
                                                                                 <div className="flex flex-col">
                                                                                     <span className="text-xs font-semibold text-slate-400 flex items-center gap-2">
-                                                                                        {intStop.stationName} 
+                                                                                        {intStop.stationName}
                                                                                         <span className="text-[9px] text-slate-600 font-mono">{intStop.stationCode}</span>
                                                                                     </span>
                                                                                     <div className="flex gap-2 items-center mt-0.5">
