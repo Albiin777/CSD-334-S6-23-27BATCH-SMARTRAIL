@@ -224,7 +224,7 @@ export default function MyAccount() {
                                 <User className="w-6 h-6 text-gray-500 mt-0.5" />
                                 <div className="flex-1">
                                     <h3 className="text-[11px] font-bold uppercase tracking-[0.15em] text-gray-600 mb-1">Full Name</h3>
-                                    <div className="text-xl font-bold text-white leading-tight flex items-center gap-3">
+                                    <div className="text-xl font-bold text-white leading-tight flex flex-wrap items-center gap-3">
                                         {user.name}
                                         {user.provider === 'google' && (
                                             <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 font-bold uppercase tracking-widest">Google Account</span>
@@ -242,11 +242,13 @@ export default function MyAccount() {
                                 <div className="flex-1">
                                     <h3 className="text-[11px] font-bold uppercase tracking-[0.15em] text-gray-600 mb-1">Email Address</h3>
                                     {!isEditingEmail ? (
-                                        <div className="flex items-center justify-between gap-4">
-                                            <span className="text-lg font-medium text-gray-200 leading-tight">{user.email}</span>
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                            <span className="text-base sm:text-lg font-medium text-gray-200 leading-tight break-all">
+                                                {user.email}
+                                            </span>
                                             <button
                                                 onClick={() => setIsEditingEmail(true)}
-                                                className="px-6 py-2 bg-white text-black hover:bg-gray-200 rounded-lg font-bold text-xs uppercase tracking-widest transition"
+                                                className="w-full sm:w-auto px-6 py-2 bg-white text-black hover:bg-gray-200 rounded-lg font-bold text-xs uppercase tracking-widest transition shrink-0"
                                             >
                                                 Change
                                             </button>
@@ -319,11 +321,13 @@ export default function MyAccount() {
                                             <p className="text-xs text-gray-500 font-medium">
                                                 {user.phone ? "Your primary contact for ticket updates and mobile login." : "Link your mobile number for seamless login and instant PNR updates."}
                                             </p>
-                                            <div className="flex items-center justify-between gap-4">
-                                                <span className="text-lg font-medium text-gray-200 leading-tight">{user.phone || 'Not linked'}</span>
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                <span className="text-base sm:text-lg font-medium text-gray-200 leading-tight">
+                                                    {user.phone || 'Not linked'}
+                                                </span>
                                                 <button
                                                     onClick={() => setIsEditingPhone(true)}
-                                                    className={`px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition ${
+                                                    className={`w-full sm:w-auto px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition shrink-0 ${
                                                         !user.phone ? 'bg-orange-600 text-white hover:bg-orange-500' : 'bg-white text-black hover:bg-gray-200'
                                                     }`}
                                                 >
