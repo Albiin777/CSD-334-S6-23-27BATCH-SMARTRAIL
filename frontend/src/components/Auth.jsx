@@ -136,19 +136,18 @@ export default function Auth({ onClose }) {
       const validTtes = ['binthalhamza@gmail.com', 'raishahashly15@gmail.com'];
       const emailLower = identifier.toLowerCase();
 
-      if (mode === 'login' && validAdmins.includes(emailLower)) {
-        const { error: adminErr } = await supabase.auth.signInWithPassword({ email: identifier, password });
-        if (adminErr) throw adminErr;
-        localStorage.setItem("isAdmin", "true");
-        if (onClose) onClose();
-        return;
-      }
-
-      if (mode === 'login' && (validTtes.includes(emailLower) || (emailLower.includes("tte") && emailLower.endsWith("@gmail.com")))) {
-        const { error: tteErr } = await supabase.auth.signInWithPassword({ email: identifier, password });
-        if (tteErr) throw tteErr;
-        localStorage.setItem("isTTE", "true");
-        localStorage.setItem("tteEmail", emailLower);
+      if (mode === 'login') {
+        const { data, error: loginErr } = await supabase.auth.signInWithPassword({ email: identifier, password });
+        if (loginErr) throw loginErr;
+        
+        const role = data?.user?.user_metadata?.role;
+        if (validAdmins.includes(emailLower) || role === 'admin') {
+          localStorage.setItem('isAdmin', 'true');
+        } else if (validTtes.includes(emailLower) || emailLower.includes('tte') || role === 'tte') {
+          localStorage.setItem('isTTE', 'true');
+          localStorage.setItem('tteEmail', emailLower);
+        }
+        
         if (onClose) onClose();
         return;
       }

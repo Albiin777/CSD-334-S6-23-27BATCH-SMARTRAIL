@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/train.api";
+import TrainEditModal from "./TrainEditModal";
 
 const STATUS_CFG = {
     Running: { color: "text-green-400 bg-green-500/10 border-green-500/20", dot: "bg-green-400" },
@@ -14,6 +15,7 @@ export default function TrainManagement() {
     const [loading, setLoading] = useState(true);
     const [searchQ, setSearchQ] = useState("");
     const [statusFilter, setStatusFilter] = useState("all");
+    const [editingTrain, setEditingTrain] = useState(null);
     const navigate = useNavigate();
 
     useEffect(() => {

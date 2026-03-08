@@ -23,9 +23,11 @@ export const AdminProtectedRoute = ({ children }) => {
         return <div className="min-h-screen pt-20 flex items-center justify-center bg-[#0f172a] text-white">Loading...</div>;
     }
 
-    // Only allow if logged in and the email is the specific admin email
+    // Only allow if logged in and the email is the specific admin email or has admin role
     const validAdmins = ['admin@gmail.com', 'hashlinairah@gmail.com'];
-    if (user && validAdmins.includes(user.email)) {
+    const role = user?.user_metadata?.role;
+    
+    if (user && (validAdmins.includes(user.email) || role === 'admin')) {
         return children;
     }
 

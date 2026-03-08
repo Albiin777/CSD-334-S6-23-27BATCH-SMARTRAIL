@@ -10,10 +10,13 @@ import {
     getAvailability,
     getStationDetails,
     getFare,
-    getCoachAllocation
+    getCoachAllocation,
+    updateTrainDetails
 } from '../controllers/train.controller.js';
 
 const router = Router();
+
+router.put('/admin/:trainNumber', updateTrainDetails);
 
 router.get('/search', searchTrains);
 router.get('/search/stations', searchStations);

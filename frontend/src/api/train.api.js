@@ -103,6 +103,17 @@ const api = {
         return await res.json();
     },
 
+    // Update Train (Admin)
+    updateTrain: async (trainNumber, updates) => {
+        const res = await fetch(`${API_BASE_URL}/trains/admin/${trainNumber}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+        });
+        if (!res.ok) throw new Error('Failed to update train');
+        return await res.json();
+    },
+
     // Create Booking
     // Payload: { trainNumber, journeyDate, classCode, source, destination, passengers: [{name, age, gender}] }
     createBooking: async (bookingPayload) => {

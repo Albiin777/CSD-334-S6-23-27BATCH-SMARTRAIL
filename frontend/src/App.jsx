@@ -243,10 +243,11 @@ export default function App() {
       const validAdmins = ['admin@gmail.com', 'hashlinairah@gmail.com'];
       const validTtes = ['binthalhamza@gmail.com', 'raishahashly15@gmail.com'];
       const email = session?.user?.email?.toLowerCase() || "";
+      const role = session?.user?.user_metadata?.role;
 
-      if (validAdmins.includes(email)) {
+      if (validAdmins.includes(email) || role === 'admin') {
         navigate('/admin');
-      } else if (validTtes.includes(email) || email.includes('tte')) {
+      } else if (validTtes.includes(email) || email.includes('tte') || role === 'tte') {
         navigate('/tte');
       }
     });
@@ -265,10 +266,11 @@ export default function App() {
         const validAdmins = ['admin@gmail.com', 'hashlinairah@gmail.com'];
         const validTtes = ['binthalhamza@gmail.com', 'raishahashly15@gmail.com'];
         const email = session?.user?.email?.toLowerCase() || "";
-
-        if (validAdmins.includes(email)) {
+        const role = session?.user?.user_metadata?.role;
+  
+        if (validAdmins.includes(email) || role === 'admin') {
           navigate('/admin');
-        } else if (validTtes.includes(email) || email.includes('tte')) {
+        } else if (validTtes.includes(email) || email.includes('tte') || role === 'tte') {
           navigate('/tte');
         } else {
           navigate('/');

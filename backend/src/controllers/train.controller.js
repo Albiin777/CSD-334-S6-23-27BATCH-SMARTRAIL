@@ -581,3 +581,29 @@ export async function getCoachAllocation(req, res) {
         return res.status(500).json({ error: 'Failed to compute coach allocation: ' + err.message });
     }
 }
+export async function updateTrainDetails(req, res) {
+    try {
+        const { trainNumber } = req.params;
+        const updates = req.body;
+        const trainIdx = dataStore.trains.findIndex(t => t.trainNumber === trainNumber);
+        
+        if (trainIdx !== -1) {
+            dataStore.trains[trainIdx] = { ...dataStore.trains[trainIdx], ...updates };
+            
+            import('fs').then(fs => {
+                import('path').then(path => {
+                    import('url').then(url => {
+                        const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
+                        const trainsDataPath = path.join(__dirname, '../../data', 'full_trains_database.json');
+                        fs.writeFileSync(trainsDataPath, JSON.stringify(dataStore.trains, null, 2));
+                    });
+                });
+            });
+            return res.json({ success: true, data: dataStore.trains[trainIdx] });
+        } else {
+            return res.status(404).json({ success: false, error: 'Train not found' });
+        }
+    } catch(err) {
+        return res.status(500).json({ success: false, error: err.message });
+    }
+}
