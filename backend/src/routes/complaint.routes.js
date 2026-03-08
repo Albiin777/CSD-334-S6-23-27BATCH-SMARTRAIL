@@ -9,7 +9,7 @@ const router = express.Router();
 // =====================================================
 router.post('/', async (req, res) => {
     try {
-        const { subject, description, images } = req.body;
+        const { subject, description, images, train_number, train_name } = req.body;
         const authHeader = req.headers.authorization;
 
         if (!authHeader) {
@@ -30,7 +30,9 @@ router.post('/', async (req, res) => {
                 subject,
                 description,
                 images: images || [],
-                status: 'open'
+                status: 'open',
+                train_number,
+                train_name
             })
             .select()
             .single();

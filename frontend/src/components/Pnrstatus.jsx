@@ -97,10 +97,7 @@ export default function PNRStatus() {
   const isStandalonePage = location.pathname === '/pnr-status';
 
   return (
-    <>
-      {!isStandalonePage && <LabelNavbar />}
-
-      <div id="pnr-section" className={`max-w-6xl mx-auto px-4 pb-14 flex justify-center flex-col text-white ${isStandalonePage ? 'mt-36' : 'mt-44'}`}>
+    <div className={`max-w-6xl mx-auto px-4 pb-14 flex justify-center flex-col text-white ${isStandalonePage ? 'mt-36' : 'mt-16'}`}>
 
         {!showResult ? (
           <>
@@ -108,13 +105,13 @@ export default function PNRStatus() {
               <h2 className="text-4xl sm:text-5xl font-black tracking-tight uppercase">
                 {loading ? "Fetching Details..." : "Check PNR Status"}
               </h2>
-              <p className="text-gray-400 mt-3 max-w-2xl mx-auto lg:mx-0 text-base leading-relaxed">
+              <p className="text-gray-400 mt-2 max-w-2xl mx-auto lg:mx-0 text-base leading-relaxed">
                 Your Passenger Name Record (PNR) is a unique 10-digit digital certificate.
                 Enter it below to unlock real-time journey updates and seat confirmation.
               </p>
             </div>
 
-            <div className={`mt-10 flex flex-col items-center lg:flex-row lg:justify-between gap-10 transition-opacity ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
+            <div className={`mt-6 flex flex-col items-center lg:flex-row lg:justify-between gap-10 transition-opacity ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
               <div className="relative w-full max-w-md lg:max-w-xl group">
                 <input
                   ref={inputRef}
@@ -169,6 +166,5 @@ export default function PNRStatus() {
           </div>
         )}
       </div>
-    </>
   );
 }

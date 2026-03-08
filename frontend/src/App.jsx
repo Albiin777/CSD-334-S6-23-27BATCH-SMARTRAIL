@@ -6,6 +6,7 @@ import Footer from "./components/common/Footer";
 import MiniFooter from "./components/common/MiniFooter";
 import Hero from "./components/Hero";
 import BookingCard from "./components/Bookingcaard";
+import TrainSchedule from "./components/TrainSchedule";
 import Pnrstatus from "./components/Pnrstatus";   // ✅ CORRECT
 import Auth from "./components/Auth";
 import Support from "./pages/Support";
@@ -153,6 +154,7 @@ export default function App() {
   const [hidden, setHidden] = useState(false);
 
   const [user, setUser] = useState(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
 
   // Form States
@@ -216,6 +218,7 @@ export default function App() {
     // Check for existing session (only if NOT explicitly logging out)
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
+      setIsAuthLoading(false);
       if (session?.user?.email?.toLowerCase().includes('tte')) {
         // Sign out from frontend so they don't have a confusing passive session here
         supabase.auth.signOut().then(() => {
@@ -258,7 +261,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#0f172a] relative">
-      <Header onLoginClick={() => setIsAuthOpen(true)} />
+      <Header user={user} isAuthLoading={isAuthLoading} onLoginClick={() => setIsAuthOpen(true)} />
 
       {isAuthOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -275,7 +278,8 @@ export default function App() {
                 <>
                   <Hero />
                   <BookingCard />
-                  <div id="pnr-section" className="scroll-mt-[190px]">
+                  <TrainSchedule />
+                  <div id="pnr-section" className="scroll-mt-[140px]">
                     <Pnrstatus />
                   </div>
                   <div id="reviews-section" className="scroll-mt-[140px]">

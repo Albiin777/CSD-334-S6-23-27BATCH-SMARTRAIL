@@ -1,12 +1,19 @@
-import { useState, useEffect } from "react";
-import { Upload, X, FileText, Image as ImageIcon, CheckCircle2, History, Loader2, AlertCircle, Trash2 } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Upload, X, FileText, Image as ImageIcon, CheckCircle2, History, Loader2, AlertCircle, Trash2, Search, Train, ChevronRight } from "lucide-react";
 import { supabase, getCurrentUser } from "../utils/supabaseClient";
+import api from "../api/train.api";
 
 export default function Support({ autoScroll = true }) {
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
   const [complaintName, setComplaintName] = useState("");
   const [description, setDescription] = useState("");
+
+  // Train Search State
+  const [trainQuery, setTrainQuery] = useState("");
+  const [selectedTrain, setSelectedTrain] = useState(null);
+  const [trainSuggestions, setTrainSuggestions] = useState([]);
+  const [showTrainSuggestions, setShowTrainSuggestions] = useState(false);
 
   const [user, setUser] = useState(null);
   const [submissionStatus, setSubmissionStatus] = useState("idle"); // idle, uploading, submitting, success, error
@@ -26,6 +33,9 @@ export default function Support({ autoScroll = true }) {
   const [submittingReply, setSubmittingReply] = useState(false);
   const [loadingReplies, setLoadingReplies] = useState(false);
 
+  const trainSearchRef = useRef(null);
+  const trainDebounceRef = useRef(null);
+
   useEffect(() => {
     // Custom wrapper to set user safely
     const getUser = async () => {
@@ -41,6 +51,37 @@ export default function Support({ autoScroll = true }) {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Close suggestions on click outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (trainSearchRef.current && !trainSearchRef.current.contains(e.target)) {
+        setShowTrainSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const fetchTrainSuggestions = (query) => {
+    if (trainDebounceRef.current) clearTimeout(trainDebounceRef.current);
+    if (!query || query.length < 2) {
+      setTrainSuggestions([]);
+      setShowTrainSuggestions(false);
+      return;
+    }
+
+    trainDebounceRef.current = setTimeout(async () => {
+      try {
+        const results = await api.searchTrains(query);
+        setTrainSuggestions(results);
+        setShowTrainSuggestions(results.length > 0);
+      } catch (err) {
+        console.error("Train search error", err);
+        setTrainSuggestions([]);
+      }
+    }, 300);
+  };
 
   useEffect(() => {
     if (showHistory && user) {
@@ -290,7 +331,9 @@ export default function Support({ autoScroll = true }) {
         body: JSON.stringify({
           subject: complaintName,
           description,
-          images: imageUrls
+          images: imageUrls,
+          train_number: selectedTrain?.trainNumber || null,
+          train_name: selectedTrain?.trainName || null
         })
       });
 
@@ -302,6 +345,8 @@ export default function Support({ autoScroll = true }) {
       setSubmissionStatus("success");
       setComplaintName("");
       setDescription("");
+      setTrainQuery("");
+      setSelectedTrain(null);
       setFiles([]);
       setPreviews([]);
 
@@ -340,7 +385,7 @@ export default function Support({ autoScroll = true }) {
   }, [autoScroll]);
 
   return (
-    <div id="support-section" className="relative w-full max-w-6xl mx-auto mt-16 px-4 pb-20 text-white animate-in fade-in duration-700 scroll-mt-[120px]">
+    <div id="support-section" className="relative w-full max-w-6xl mx-auto mt-20 px-4 pb-20 text-white animate-in fade-in duration-700 scroll-mt-[120px]">
       <div className="mb-10 border-b border-[#B3B3B3]/20 pb-6 flex flex-col md:flex-row md:items-end justify-between gap-6 md:gap-0">
         <div>
           <h2 className="text-4xl sm:text-5xl font-black uppercase tracking-tight text-[#FFFFFF]">Support</h2>
@@ -457,6 +502,47 @@ export default function Support({ autoScroll = true }) {
           </div>
 
           <div className="space-y-6">
+            <div className="relative" ref={trainSearchRef}>
+              <label className="text-[9px] font-bold text-[#B3B3B3] uppercase tracking-widest block mb-1 transition-colors">Related Train (Optional)</label>
+              <div className="relative group">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#B3B3B3]/40 group-focus-within:text-white transition-colors" />
+                <input
+                  type="text"
+                  value={trainQuery}
+                  onChange={(e) => {
+                    setTrainQuery(e.target.value);
+                    fetchTrainSuggestions(e.target.value);
+                    if (selectedTrain) setSelectedTrain(null);
+                  }}
+                  onFocus={() => { if (trainSuggestions.length > 0) setShowTrainSuggestions(true); }}
+                  placeholder="SEARCH TRAIN NAME OR NUMBER..."
+                  className="w-full bg-[#FFFFFF]/5 border-b-[1.5px] border-[#B3B3B3]/20 pl-10 pr-3 py-3 text-[11px] focus:border-white transition-colors outline-none font-bold uppercase tracking-wider text-[#FFFFFF] placeholder-[#B3B3B3]/30"
+                />
+              </div>
+
+              {showTrainSuggestions && trainSuggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-2 bg-[#1A1A1A] border border-[#333] rounded-xl shadow-2xl z-50 max-h-48 overflow-y-auto custom-scrollbar overflow-x-hidden">
+                  {trainSuggestions.map((train, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => {
+                        setTrainQuery(`${train.trainName} (${train.trainNumber})`);
+                        setSelectedTrain(train);
+                        setShowTrainSuggestions(false);
+                      }}
+                      className="px-4 py-2.5 hover:bg-white/5 cursor-pointer border-b border-[#333]/50 last:border-b-0 flex items-center justify-between group"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-black text-white truncate">{train.trainName}</div>
+                        <div className="text-[9px] text-gray-500 font-bold tracking-tight">#{train.trainNumber}</div>
+                      </div>
+                      <ChevronRight className="w-3 h-3 text-gray-600 group-hover:text-white transition-colors flex-shrink-0" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="group">
               <label className="text-[9px] font-bold text-[#B3B3B3] uppercase tracking-widest block mb-2 transition-colors group-focus-within:text-white">Subject</label>
               <input
@@ -495,7 +581,7 @@ export default function Support({ autoScroll = true }) {
 
             <div className="flex items-center gap-8">
               <button
-                onClick={() => { setComplaintName(""); setDescription(""); setFiles([]); setPreviews([]); }}
+                onClick={() => { setComplaintName(""); setDescription(""); setTrainQuery(""); setSelectedTrain(null); setFiles([]); setPreviews([]); }}
                 className="text-[10px] font-black uppercase text-[#D4D4D4] border-b-[1.5px] border-[#FFFFFF] pb-0.5 hover:text-white transition-all tracking-widest disabled:opacity-50"
                 disabled={submissionStatus === 'submitting' || submissionStatus === 'uploading'}
               >

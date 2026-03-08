@@ -268,11 +268,11 @@ const bookTicket = async (trainNumber, source, destination, journeyDate, classCo
         try {
             await supabase.from('notifications').insert([
                 {
-                    user_id: userId,
+                    "userId": userId,
                     type: notifType,
                     title: notifTitle,
                     message: notifMessage,
-                    for_you: true,
+                    "forYou": true,
                     link: `/pnr-status?pnr=${pnr}`
                 }
             ]);
@@ -452,12 +452,12 @@ const getBookedSeatsList = async (trainNumber, journeyDate) => {
         .select(`
             id,
             passengers (
-                seat_number,
+                seatNumber,
                 status
             )
         `)
-        .eq('train_number', String(trainNumber))
-        .eq('journey_date', journeyDate);
+        .eq('trainNumber', String(trainNumber))
+        .eq('journeyDate', journeyDate);
 
     if (error) {
         console.error("Error fetching bookings for layout:", error);
@@ -484,8 +484,8 @@ const getBookedSeatsList = async (trainNumber, journeyDate) => {
     bookings.forEach(booking => {
         if (booking.passengers) {
             booking.passengers.forEach(p => {
-                if (p.seat_number && p.status === 'CNF') {
-                    unavailableSeatIds.add(p.seat_number);
+                if (p.seatNumber && p.status === 'CNF') {
+                    unavailableSeatIds.add(p.seatNumber);
                 }
             });
         }

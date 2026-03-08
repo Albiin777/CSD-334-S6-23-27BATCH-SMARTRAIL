@@ -5,16 +5,25 @@ import LabelNavbar from "../LabelNavbar";
 import Auth from "../Auth";
 import { supabase } from "../../utils/supabaseClient";
 
-function Header({ onLoginClick }) {
+function Header({ onLoginClick, user: propUser, isAuthLoading }) {
   const [hidden, setHidden] = useState(false);
-  const [user, setUser] = useState(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
 
+  // Robustly extract display name
+  const getDisplayName = (user) => {
+    if (!user) return "";
+    const fullName = user.user_metadata?.full_name || user.email?.split('@')[0];
+    return fullName?.split(' ')[0] || 'User';
+  };
+
   const isPaymentPage = location.pathname.startsWith('/payment');
   const hideLabelNavbar = location.pathname.startsWith('/seat-layout') || location.pathname.startsWith('/passenger-details') || isPaymentPage;
+
+  // Sync prop user to local name for UI
+  const displayName = getDisplayName(propUser);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -25,42 +34,6 @@ function Header({ onLoginClick }) {
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    // Get current user from Supabase
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        // Extract first name from full name or email
-        const fullName = user.user_metadata?.full_name || user.email?.split('@')[0];
-        const firstName = fullName?.split(' ')[0] || 'User';
-        setUser({
-          id: user.id,
-          email: user.email,
-          name: firstName
-        });
-      }
-    };
-
-    getUser();
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        const fullName = session.user.user_metadata?.full_name || session.user.email?.split('@')[0];
-        const firstName = fullName?.split(' ')[0] || 'User';
-        setUser({
-          id: session.user.id,
-          email: session.user.email,
-          name: firstName
-        });
-      } else {
-        setUser(null);
-      }
-    });
-
-    return () => subscription.unsubscribe();
   }, []);
 
   if (isPaymentPage) {
@@ -102,14 +75,16 @@ function Header({ onLoginClick }) {
           </div>
         </div>
 
-        {user ? (
+        {isAuthLoading ? (
+          <div className="h-10 w-24 bg-gray-100 dark:bg-gray-800 animate-pulse rounded-lg"></div>
+        ) : propUser ? (
           <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setShowDropdown(!showDropdown)}
               className="px-3 sm:px-5 py-2 rounded-lg border border-[#2B2B2B] text-[#2B2B2B] dark:text-white dark:border-white hover:bg-[#2B2B2B] hover:text-white dark:hover:bg-gray-700 transition font-medium flex items-center gap-2"
             >
               <User className="h-4 w-4 sm:hidden" />
-              <span className="hidden sm:inline">Hi, {user.name}</span>
+              <span className="hidden sm:inline">Hi, {displayName}</span>
               <span>▾</span>
             </button>
 

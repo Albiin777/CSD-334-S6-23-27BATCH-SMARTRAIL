@@ -28,7 +28,10 @@ export default function MyBookings() {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
-                if (!res.ok) throw new Error('Failed to fetch booking history');
+                if (!res.ok) {
+                    const errorData = await res.json();
+                    throw new Error(errorData.error || 'Failed to fetch booking history');
+                }
                 
                 const data = await res.json();
                 setBookings(data);

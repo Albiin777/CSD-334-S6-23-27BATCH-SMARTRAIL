@@ -31,7 +31,8 @@ export default function MyAccount() {
                         id: user.id,
                         email: user.email,
                         phone: user.phone || '',
-                        name: user.user_metadata?.full_name || user.email?.split('@')[0]
+                        name: user.user_metadata?.full_name || user.email?.split('@')[0],
+                        provider: user.app_metadata?.provider || 'mobile' // Detection for Google/Email
                     });
                     setNewEmail(user.email);
                     setNewPhone(user.phone || '+91');
@@ -196,7 +197,12 @@ export default function MyAccount() {
                                 <User className="w-6 h-6 text-gray-500 mt-0.5" />
                                 <div className="flex-1">
                                     <h3 className="text-[11px] font-bold uppercase tracking-[0.15em] text-gray-600 mb-1">Full Name</h3>
-                                    <div className="text-xl font-bold text-white leading-tight">{user.name}</div>
+                                    <div className="text-xl font-bold text-white leading-tight flex items-center gap-3">
+                                        {user.name}
+                                        {user.provider === 'google' && (
+                                            <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 font-bold uppercase tracking-widest">Google Account</span>
+                                        )}
+                                    </div>
                                     <p className="text-xs text-gray-600 mt-1 font-medium">Used for identification and ticket bookings.</p>
                                 </div>
                             </div>
@@ -282,14 +288,21 @@ export default function MyAccount() {
                                 <div className="flex-1">
                                     <h3 className="text-[11px] font-bold uppercase tracking-[0.15em] text-gray-600 mb-1">Phone Number</h3>
                                     {!isEditingPhone ? (
-                                        <div className="flex items-center justify-between gap-4">
-                                            <span className="text-lg font-medium text-gray-200 leading-tight">{user.phone || 'Not linked'}</span>
-                                            <button
-                                                onClick={() => setIsEditingPhone(true)}
-                                                className="px-6 py-2 bg-white text-black hover:bg-gray-200 rounded-lg font-bold text-xs uppercase tracking-widest transition"
-                                            >
-                                                {user.phone ? 'Change' : 'Add'}
-                                            </button>
+                                        <div className="space-y-3">
+                                            <p className="text-xs text-gray-500 font-medium">
+                                                {user.phone ? "Your primary contact for ticket updates and mobile login." : "Link your mobile number for seamless login and instant PNR updates."}
+                                            </p>
+                                            <div className="flex items-center justify-between gap-4">
+                                                <span className="text-lg font-medium text-gray-200 leading-tight">{user.phone || 'Not linked'}</span>
+                                                <button
+                                                    onClick={() => setIsEditingPhone(true)}
+                                                    className={`px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition ${
+                                                        !user.phone ? 'bg-orange-600 text-white hover:bg-orange-500' : 'bg-white text-black hover:bg-gray-200'
+                                                    }`}
+                                                >
+                                                    {user.phone ? 'Change' : 'Link Phone'}
+                                                </button>
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="mt-4 space-y-4">
