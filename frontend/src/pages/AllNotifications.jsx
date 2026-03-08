@@ -1,82 +1,80 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Ticket, Info, Newspaper, Inbox, Bell, CheckCircle2 } from 'lucide-react';
-
-const DUMMY_NOTIFICATIONS = [
-    {
-        id: 1,
-        type: 'alert',
-        title: 'Train Cancelled',
-        message: 'Alert: Train 22653 has been cancelled due to track maintenance. Full refund initiated.',
-        date: '10 min ago',
-        read: false,
-        link: null,
-        forYou: true
-    },
-    {
-        id: 2,
-        type: 'reminder',
-        title: 'Waitlist Alert',
-        message: 'Your waitlisted ticket on Pune Express is now RAC. You can view the PNR status to confirm the coach.',
-        date: '2 hours ago',
-        read: false,
-        link: '/pnr-status',
-        forYou: true
-    },
-    {
-        id: 3,
-        type: 'news',
-        title: 'New Vande Bharat Express Launched',
-        message: 'Indian Railways introduces the new Vande Bharat Express connecting Trivandrum and Kasaragod in record time. Read the full article to see schedules and pricing.',
-        date: '5 hours ago',
-        read: false,
-        link: '#',
-        forYou: false
-    },
-    {
-        id: 4,
-        type: 'info',
-        title: 'Admin Update',
-        message: 'Kerala Express 12625 is running late by 2 hours. Expected arrival at ERS is 14:30.',
-        date: '1 day ago',
-        read: true,
-        link: null,
-        forYou: true
-    },
-    {
-        id: 5,
-        type: 'news',
-        title: 'Monsoon Safety Guidelines Released',
-        message: 'Please review the updated safety guidelines for traveling during the monsoon season.',
-        date: '3 days ago',
-        read: true,
-        link: '#',
-        forYou: false
-    }
-];
+import { notificationApi } from '../api/notification.api';
+import { supabase } from '../utils/supabaseClient';
 
 export default function AllNotifications() {
-    const [notifications, setNotifications] = useState(DUMMY_NOTIFICATIONS);
+    const [notifications, setNotifications] = useState([]);
     const [activeTab, setActiveTab] = useState('all'); // 'all' | 'foryou'
+    const [isLoading, setIsLoading] = useState(true);
     const navigate = useNavigate();
+    const [user, setUser] = useState(null);
+
+    const isLoggedIn = !!user;
+
+    // Supabase auth state listener
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setUser(session?.user ?? null);
+        });
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null);
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
+
+    useEffect(() => {
+        const fetchNotifications = async () => {
+            try {
+                setIsLoading(true);
+                const data = await notificationApi.getNotifications();
+                setNotifications(data);
+            } catch (error) {
+                console.error("Error fetching notifications:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        // Only fetch if logged in
+        if (isLoggedIn) {
+            fetchNotifications();
+        } else {
+            setIsLoading(false);
+            setNotifications([]);
+        }
+    }, [isLoggedIn]);
 
     const filteredNotifications = notifications.filter(n => {
-        if (activeTab === 'foryou') return n.forYou;
+        if (activeTab === 'foryou') return n.for_you;
         return true; // 'all'
     });
 
-    const unreadCount = filteredNotifications.filter(n => !n.read).length;
+    const unreadCount = filteredNotifications.filter(n => !n.is_read).length;
 
-    const markAllAsRead = () => {
-        setNotifications(notifications.map(n => ({ ...n, read: true })));
+    const markAllAsRead = async () => {
+        try {
+            await notificationApi.markAllAsRead();
+            setNotifications(notifications.map(n => ({ ...n, is_read: true })));
+        } catch (error) {
+            console.error(error);
+        }
     };
 
-    const markAsRead = (id) => {
-        setNotifications(notifications.map(n => n.id === id ? { ...n, read: true } : n));
+    const markAsRead = async (id) => {
+        try {
+            await notificationApi.markAsRead(id);
+            setNotifications(notifications.map(n => n.id === id ? { ...n, is_read: true } : n));
+        } catch (error) {
+            console.error(error);
+        }
     };
 
     const handleNotificationClick = (notif) => {
-        if (!notif.read) {
+        if (!notif.is_read) {
             markAsRead(notif.id);
         }
         if (notif.link && notif.link !== '#') {
@@ -84,38 +82,21 @@ export default function AllNotifications() {
         }
     };
 
-    const getIcon = (type) => {
-        switch (type) {
-            case 'alert':
-                return <AlertTriangle size={20} className="text-red-500" />;
-            case 'reminder':
-                return <Ticket size={20} className="text-orange-400" />;
-            case 'info':
-                return <Info size={20} className="text-blue-500" />;
-            case 'news':
-                return <Newspaper size={20} className="text-purple-400" />;
-            default:
-                return <Bell size={20} className="text-gray-400" />;
-        }
-    };
+    const getIcon = (type, isRead) => {
+        const iconClass = isRead ? "text-slate-500" : "text-white";
+        const iconSize = 22;
 
-    const getIconBg = (type) => {
         switch (type) {
-            case 'alert':
-                return 'bg-red-500/10 text-red-400';
-            case 'reminder':
-                return 'bg-orange-500/10 text-orange-400';
-            case 'info':
-                return 'bg-blue-500/10 text-blue-400';
-            case 'news':
-                return 'bg-purple-500/10 text-purple-400';
-            default:
-                return 'bg-gray-500/10 text-gray-400';
+            case 'alert': return <AlertTriangle size={iconSize} className={iconClass} />;
+            case 'reminder': return <Ticket size={iconSize} className={iconClass} />;
+            case 'info': return <Info size={iconSize} className={iconClass} />;
+            case 'news': return <Newspaper size={iconSize} className={iconClass} />;
+            default: return <Bell size={iconSize} className={iconClass} />;
         }
     };
 
     return (
-        <div className="min-h-screen pt-24 pb-20 px-4 bg-[#0f172a] text-gray-100 font-sans">
+        <div className="min-h-screen pt-40 pb-20 px-4 bg-[#0f172a] text-gray-100 font-sans">
             <div className="max-w-4xl mx-auto">
 
                 {/* Header Section */}
@@ -167,11 +148,25 @@ export default function AllNotifications() {
 
                 {/* Notifications List */}
                 <div className="bg-[#1D2332] rounded-xl border border-gray-700 shadow-lg overflow-hidden">
-                    {filteredNotifications.length === 0 ? (
+                    {isLoading ? (
+                        <div className="px-6 py-16 text-center text-gray-500 flex flex-col items-center">
+                            <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                            <p className="text-sm font-medium">Loading notifications...</p>
+                        </div>
+                    ) : filteredNotifications.length === 0 ? (
                         <div className="px-6 py-16 text-center text-gray-500 flex flex-col items-center">
                             <Inbox size={48} className="mb-4 text-gray-600 opacity-50" />
-                            <p className="text-lg font-medium text-gray-400">You are all caught up!</p>
-                            <p className="text-sm mt-1">No pending notifications in this view.</p>
+                            {activeTab === 'foryou' && !isLoggedIn ? (
+                                <>
+                                    <p className="text-lg font-medium text-gray-400">Log in to see your notifications</p>
+                                    <p className="text-sm mt-1">Updates about your tickets will appear here.</p>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-lg font-medium text-gray-400">You are all caught up!</p>
+                                    <p className="text-sm mt-1">No pending notifications in this view.</p>
+                                </>
+                            )}
                         </div>
                     ) : (
                         <div className="flex flex-col divide-y divide-gray-700/50">
@@ -180,30 +175,28 @@ export default function AllNotifications() {
                                     key={notif.id}
                                     onClick={() => handleNotificationClick(notif)}
                                     className={`
-                    px-6 py-5 cursor-pointer transition-all duration-300
-                    ${notif.read ? 'bg-transparent opacity-70 hover:bg-white/5' : 'bg-[#1D2332] hover:bg-white/5 border-l-[3px] border-l-orange-500/50'}
-                  `}
+                                        px-6 py-5 cursor-pointer transition-all duration-300
+                                        ${notif.is_read ? 'bg-transparent opacity-70 hover:bg-white/5' : 'bg-[#1D2332] hover:bg-white/5 border-l-[3px] border-l-orange-500/50'}
+                                    `}
                                 >
-                                    <div className={`flex gap-4 sm:gap-6 ${notif.read ? 'ml-1' : '-ml-[3px]'}`}>
+                                    <div className={`flex gap-4 sm:gap-6 ${notif.is_read ? 'ml-1' : '-ml-[3px]'}`}>
                                         {/* Icon */}
-                                        <div className="shrink-0 mt-1">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${getIconBg(notif.type)}`}>
-                                                {getIcon(notif.type)}
-                                            </div>
+                                        <div className="shrink-0 mt-1.5 flex items-center justify-center w-10">
+                                            {getIcon(notif.type, notif.is_read)}
                                         </div>
 
                                         {/* Content */}
                                         <div className="flex-1">
                                             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-1.5 gap-1 sm:gap-4">
-                                                <h4 className={`text-base font-bold tracking-wide ${notif.read ? 'text-gray-400' : 'text-gray-200'}`}>
+                                                <h4 className={`text-base font-bold tracking-wide ${notif.is_read ? 'text-gray-400' : 'text-gray-200'}`}>
                                                     {notif.title}
                                                 </h4>
                                                 <span className="text-[11px] font-medium text-gray-400 whitespace-nowrap bg-gray-900/40 px-2 py-1 rounded">
-                                                    {notif.date}
+                                                    {new Date(notif.created_at).toLocaleDateString()}
                                                 </span>
                                             </div>
 
-                                            <p className={`text-sm leading-relaxed mb-3 ${notif.read ? 'text-gray-500' : 'text-gray-400'}`}>
+                                            <p className={`text-sm leading-relaxed mb-3 ${notif.is_read ? 'text-gray-500' : 'text-gray-400'}`}>
                                                 {notif.message}
                                             </p>
 

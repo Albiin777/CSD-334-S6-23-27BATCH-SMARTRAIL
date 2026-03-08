@@ -193,21 +193,64 @@ export default function SeatLayout() {
 
     const isUnreservedClass = ['GN', 'GS', 'UR', '2S'].includes(classType) || classType.toLowerCase().includes('general');
 
-    const toggleSeat = (seat, coachId) => {
+    // ── Seat Blocking Cleanup ─────────────────────────────────────────────────
+    // Unblock all selected seats when navigating away or closing the tab
+    useEffect(() => {
+        const cleanup = async () => {
+            if (selectedSeats.length > 0) {
+                for (const seat of selectedSeats) {
+                    try {
+                        api.unblockSeat({
+                            trainNumber,
+                            journeyDate,
+                            seatId: seat.uid
+                        });
+                    } catch (e) { /* silent fail */ }
+                }
+            }
+        };
+
+        window.addEventListener("beforeunload", cleanup);
+        return () => {
+            cleanup();
+            window.removeEventListener("beforeunload", cleanup);
+        };
+    }, [selectedSeats, trainNumber, journeyDate]);
+
+    const toggleSeat = async (seat, coachId) => {
         if (seat.isBooked || isTrainSearchMode || isUnreservedClass) return;
         const seatId = `${coachId}-${seat.seatNumber}`;
         const isSelected = selectedSeats.some(s => s.uid === seatId);
 
         if (isSelected) {
-            setSelectedSeats(selectedSeats.filter(s => s.uid !== seatId));
+            try {
+                // Optimistically update UI
+                setSelectedSeats(selectedSeats.filter(s => s.uid !== seatId));
+                // Call backend to unblock
+                await api.unblockSeat({ trainNumber, journeyDate, seatId });
+            } catch (err) {
+                console.error("Failed to unblock seat", err);
+            }
         } else {
             if (selectedSeats.length >= passengerCount) return;
-            setSelectedSeats([...selectedSeats, {
-                uid: seatId,
-                seatNumber: seat.seatNumber,
-                coachId,
-                berthType: seat.berthType
-            }]);
+            try {
+                // Call backend to block FIRST
+                await api.blockSeat({ trainNumber, journeyDate, seatId });
+                // If successful, update UI
+                setSelectedSeats([...selectedSeats, {
+                    uid: seatId,
+                    seatNumber: seat.seatNumber,
+                    coachId,
+                    berthType: seat.berthType
+                }]);
+            } catch (err) {
+                alert("This seat was just held by another user. Please try another seat.");
+                // Optionally refresh layout to show new bookings/blocks
+                setLoading(true); 
+                // Re-trigger the main fetch effect
+                const fetchData = async () => { /* ... simplified refresh ... */ };
+                window.location.reload(); // Quickest way to sync state for now
+            }
         }
     };
 
@@ -234,7 +277,7 @@ export default function SeatLayout() {
             </div>
             <h2 className="text-2xl md:text-3xl font-bold text-white mb-2">Train Does Not Run</h2>
             <p className="text-gray-400 max-w-md">
-                {trainDetails?.trainName || `Train #${trainNumber}`} does not run on {new Date(journeyDate).toLocaleString('en-US', { weekday: 'long' })}s.
+                {trainDetails?.trainName || `Train #${trainNumber}`} does not run on this day.
             </p>
             <button
                 onClick={() => navigate(-1)}

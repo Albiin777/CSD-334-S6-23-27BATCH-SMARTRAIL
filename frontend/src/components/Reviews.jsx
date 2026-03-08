@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Star, Search, ThumbsUp, CheckCircle2, Plus, X, ThumbsDown, Pencil, Image as ImageIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "../utils/supabaseClient";
 import api from "../api/train.api";
@@ -13,6 +13,12 @@ export default function Reviews() {
     const [user, setUser] = useState(null);
     const [expandedCards, setExpandedCards] = useState({});
     const [animStep, setAnimStep] = useState(0); // 0=hidden, 1=header in, 2=content in
+    const [isLoading, setIsLoading] = useState(false);
+    const [trainSuggestions, setTrainSuggestions] = useState([]);
+    const [showTrainSuggestions, setShowTrainSuggestions] = useState(false);
+
+    const searchRef = useRef(null);
+    const trainDebounceRef = useRef(null);
 
     const toggleCard = (id) => setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
 
@@ -30,7 +36,19 @@ export default function Reviews() {
         return () => subscription.unsubscribe();
     }, []);
 
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (searchRef.current && !searchRef.current.contains(e.target)) {
+                setShowTrainSuggestions(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
     const [reviews, setReviews] = useState([]);
+    const [averageRating, setAverageRating] = useState(0);
+    const [isNotFound, setIsNotFound] = useState(false);
     const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
     const galleryItems = reviews.flatMap(r => {
@@ -49,16 +67,56 @@ export default function Reviews() {
         ratings: { cleanliness: 5, safety: 5, comfort: 5, schedule: 5, staff: 5 }
     });
 
-    const handleSearch = async () => {
-        if (!searchQuery.trim()) return;
-        setTrainName(searchQuery);
+    const fetchTrainSuggestions = (query) => {
+        if (trainDebounceRef.current) clearTimeout(trainDebounceRef.current);
+        if (!query || query.length < 2) { setTrainSuggestions([]); setShowTrainSuggestions(false); return; }
+
+        trainDebounceRef.current = setTimeout(async () => {
+            try {
+                const results = await api.searchTrains(query);
+                setTrainSuggestions(results);
+                setShowTrainSuggestions(results.length > 0);
+            } catch (err) {
+                console.error("Train search error", err);
+                setTrainSuggestions([]);
+            }
+        }, 300);
+    };
+
+    const handleSearch = async (forcedQuery = null) => {
+        const query = forcedQuery !== null ? forcedQuery : searchQuery;
+        if (!query.trim()) return;
+        setIsLoading(true);
+        setIsNotFound(false);
         setHasSearched(true);
         setAnimStep(0);
-        setTimeout(() => setAnimStep(1), 60);   // header slides in
-        setTimeout(() => setAnimStep(2), 240);  // content rises up
-
+        setShowTrainSuggestions(false);
+        
         try {
-            const data = await api.getReviews(searchQuery);
+            // 1. Resolve train name/number first
+            const searchResults = await api.searchTrains(query);
+            if (!searchResults || searchResults.length === 0) {
+                setIsNotFound(true);
+                setTrainName(query);
+                setReviews([]);
+                setAverageRating(0);
+                setTimeout(() => setAnimStep(1), 60);
+                setTimeout(() => setAnimStep(2), 240);
+                setIsLoading(false);
+                return;
+            }
+
+            // Pick the first match
+            const bestMatch = searchResults[0];
+            const fullDisplayName = `${bestMatch.trainName} (${bestMatch.trainNumber})`;
+            setTrainName(fullDisplayName);
+
+            // 2. Fetch reviews for this specific train number
+            const data = await api.getReviews(bestMatch.trainNumber);
+            
+            setTimeout(() => setAnimStep(1), 60);   // header slides in
+            setTimeout(() => setAnimStep(2), 240);  // content rises up
+
             if (data && data.reviews) {
                 const mappedReviews = data.reviews.map((r, i) => ({
                     id: r.id,
@@ -75,10 +133,17 @@ export default function Reviews() {
                     categoryRatings: { cleanliness: r.rating, safety: r.rating, comfort: r.rating, schedule: r.rating, staff: r.rating }
                 }));
                 setReviews(mappedReviews);
+                setAverageRating(data.averageRating || 0);
+            } else {
+                setReviews([]);
+                setAverageRating(0);
             }
         } catch (err) {
             console.error("Failed to load reviews:", err);
             setReviews([]);
+            setAverageRating(0);
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -97,12 +162,12 @@ export default function Reviews() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isLightboxOpen, galleryItems.length]);
 
-    const ratings = [
-        { label: "Cleanliness", score: 4.8, color: "bg-emerald-500" },
-        { label: "Safety", score: 4.9, color: "bg-blue-500" },
-        { label: "Comfort", score: 4.7, color: "bg-amber-500" },
-        { label: "Schedule", score: 4.5, color: "bg-violet-500" },
-        { label: "Staff", score: 4.6, color: "bg-rose-500" },
+    const ratingsList = [
+        { label: "Cleanliness", score: averageRating || 0, color: "bg-emerald-500" },
+        { label: "Safety", score: averageRating || 0, color: "bg-blue-500" },
+        { label: "Comfort", score: averageRating || 0, color: "bg-amber-500" },
+        { label: "Schedule", score: averageRating || 0, color: "bg-violet-500" },
+        { label: "Staff", score: averageRating || 0, color: "bg-rose-500" },
     ];
 
     const getRatingColor = (score) => {
@@ -164,12 +229,55 @@ export default function Reviews() {
                         </p>
                     </div>
                     <div className="h-px bg-white/10 w-full mb-6"></div>
-                    <div className="relative max-w-lg">
-                        <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} placeholder="Enter train name or number..."
-                            className="w-full pl-6 pr-14 py-4 bg-[#1D2332] border border-white/20 rounded-2xl text-white placeholder-slate-500 focus:outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all text-base" />
-                        <button onClick={handleSearch} className="absolute right-2 top-2 bottom-2 aspect-square bg-white hover:bg-slate-200 text-black rounded-xl flex items-center justify-center transition-colors">
-                            <Search className="w-5 h-5" />
+                    <div className="relative max-w-lg" ref={searchRef}>
+                        <input 
+                            type="text" 
+                            value={searchQuery} 
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                setSearchQuery(v);
+                                fetchTrainSuggestions(v);
+                            }} 
+                            onFocus={() => { if (trainSuggestions.length > 0) setShowTrainSuggestions(true); }}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSearch()} 
+                            placeholder="Enter train name or number..."
+                            className="w-full pl-6 pr-14 py-4 bg-[#1D2332] border border-white/20 rounded-2xl text-white placeholder-slate-500 focus:outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all text-base" 
+                        />
+                        <button onClick={() => handleSearch()} className="absolute right-2 top-2 bottom-2 aspect-square bg-white hover:bg-slate-200 text-black rounded-xl flex items-center justify-center transition-colors">
+                            {isLoading ? (
+                                <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
+                            ) : (
+                                <Search className="w-5 h-5" />
+                            )}
                         </button>
+
+                        {/* TRAIN SUGGESTIONS DROPDOWN */}
+                        {showTrainSuggestions && trainSuggestions.length > 0 && (
+                            <div className="absolute left-0 right-0 top-full mt-2 bg-[#1D2332]/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/10 max-h-64 overflow-y-auto z-[100] custom-scrollbar">
+                                {trainSuggestions.map((train, idx) => (
+                                    <div
+                                        key={idx}
+                                        onClick={() => {
+                                            const fullStr = `${train.trainName} (${train.trainNumber})`;
+                                            setSearchQuery(fullStr);
+                                            setShowTrainSuggestions(false);
+                                            handleSearch(fullStr);
+                                        }}
+                                        className="px-5 py-4 hover:bg-white/5 cursor-pointer border-b border-white/5 last:border-b-0 transition-all group"
+                                    >
+                                        <div className="flex justify-between items-center mb-1">
+                                            <div className="text-sm font-bold text-white transition-colors">{train.trainName}</div>
+                                            <div className="text-[10px] font-black text-slate-500 bg-white/5 px-2 py-0.5 rounded-md uppercase tracking-widest">#{train.trainNumber}</div>
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-2">
+                                            <span>{train.source}</span>
+                                            <span className="text-slate-700">→</span>
+                                            <span>{train.destination}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -180,6 +288,15 @@ export default function Reviews() {
     return (
         <div className="relative w-full max-w-6xl mx-auto mt-8 pb-20 px-4">
 
+            {/* BACK BUTTON */}
+            <button 
+                onClick={() => { setHasSearched(false); setSearchQuery(""); }}
+                className="mb-6 flex items-center gap-2 text-slate-400 hover:text-white transition-all group bg-white/5 hover:bg-white/10 px-4 py-2 rounded-xl border border-white/5 hover:border-white/10"
+            >
+                <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Back to Search</span>
+            </button>
+
             {/* HEADER — slides in first */}
             <div className={`mb-8 pl-2 transition-all duration-500 ease-out ${animStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
                 <div className="mb-6">
@@ -189,12 +306,78 @@ export default function Reviews() {
                 <div className="h-px bg-white/10 w-full mb-6"></div>
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                        <span className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block mb-1">Viewing Reviews For</span>
+                        <div className="flex items-center gap-3 mb-1">
+                            <span className="text-slate-500 text-[10px] font-bold uppercase tracking-widest block">Viewing Reviews For</span>
+                            {reviews.length > 0 && (
+                                <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[9px] font-black uppercase tracking-tighter rounded-md border border-emerald-500/20">
+                                    {reviews.length} Verified Review{reviews.length !== 1 ? 's' : ''}
+                                </span>
+                            )}
+                            {reviews.length === 0 && !isNotFound && hasSearched && (
+                                <span className="px-2 py-0.5 bg-amber-500/10 text-amber-500 text-[9px] font-black uppercase tracking-tighter rounded-md border border-amber-500/20">
+                                    New Entry • 0 Reviews
+                                </span>
+                            )}
+                            {isNotFound && (
+                                <span className="px-2 py-0.5 bg-rose-500/10 text-rose-500 text-[9px] font-black uppercase tracking-tighter rounded-md border border-rose-500/20">
+                                    Not Found
+                                </span>
+                            )}
+                        </div>
                         <h3 className="text-2xl md:text-3xl font-black text-white uppercase tracking-tight">{trainName}</h3>
                     </div>
-                    <button onClick={() => { setHasSearched(false); setSearchQuery(""); }} className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-xs font-bold uppercase tracking-wider px-4 py-2.5">
-                        <Search className="w-4 h-4" /> Search Another
-                    </button>
+                    <div className="relative max-w-sm w-full" ref={searchRef}>
+                        <div className="relative group">
+                            <input 
+                                type="text" 
+                                value={searchQuery} 
+                                onChange={(e) => {
+                                    const v = e.target.value;
+                                    setSearchQuery(v);
+                                    fetchTrainSuggestions(v);
+                                }} 
+                                onFocus={() => { if (trainSuggestions.length > 0) setShowTrainSuggestions(true); }}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()} 
+                                placeholder="Search another train..."
+                                className="w-full pl-5 pr-12 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-white/30 focus:bg-white/10 transition-all text-sm group-hover:border-white/20" 
+                            />
+                            <button onClick={() => handleSearch()} className="absolute right-2 top-1.5 bottom-1.5 aspect-square bg-white hover:bg-slate-200 text-black rounded-lg flex items-center justify-center transition-all active:scale-95">
+                                {isLoading ? (
+                                    <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
+                                ) : (
+                                    <Search className="w-4 h-4" />
+                                )}
+                            </button>
+                        </div>
+
+                        {/* SUGGESTIONS DROPDOWN (duplicate of landing but themed for header) */}
+                        {showTrainSuggestions && trainSuggestions.length > 0 && (
+                            <div className="absolute right-0 left-0 md:left-auto md:w-80 top-full mt-2 bg-[#1D2332]/95 backdrop-blur-2xl rounded-2xl shadow-2xl border border-white/10 max-h-64 overflow-y-auto z-[100] custom-scrollbar border-t-white/20">
+                                {trainSuggestions.map((train, idx) => (
+                                    <div
+                                        key={idx}
+                                        onClick={() => {
+                                            const fullStr = `${train.trainName} (${train.trainNumber})`;
+                                            setSearchQuery(fullStr);
+                                            setShowTrainSuggestions(false);
+                                            handleSearch(fullStr);
+                                        }}
+                                        className="px-5 py-4 hover:bg-white/5 cursor-pointer border-b border-white/5 last:border-b-0 transition-all group"
+                                    >
+                                        <div className="flex justify-between items-center mb-1">
+                                            <div className="text-sm font-bold text-white transition-colors">{train.trainName}</div>
+                                            <div className="text-[10px] font-black text-slate-500 bg-white/5 px-2 py-0.5 rounded-md uppercase tracking-widest">#{train.trainNumber}</div>
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-2">
+                                            <span>{train.source}</span>
+                                            <span className="text-slate-700">→</span>
+                                            <span>{train.destination}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -237,9 +420,7 @@ export default function Reviews() {
                     <button onClick={() => openLightbox(0)} className="w-full py-3 mt-auto rounded-xl bg-white text-black hover:bg-slate-200 text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 group">
                         <ImageIcon className="w-4 h-4 group-hover:scale-110 transition-transform" /> View Gallery
                     </button>
-                </div>
-
-                {/* RIGHT: RATINGS & REVIEWS */}
+                </div>                {/* RIGHT: RATINGS & REVIEWS */}
                 <div className="flex-1 flex flex-col bg-[#1D2332] h-full">
 
                     {/* RATINGS */}
@@ -248,104 +429,109 @@ export default function Reviews() {
                             <h3 className="text-xs font-black uppercase tracking-widest text-white flex items-center gap-2">
                                 <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" /> Overall Ratings
                             </h3>
-                            {user && (
+                            {user && !isNotFound && (
                                 <button onClick={() => { setNewReview(prev => ({ ...prev, name: user.user_metadata?.full_name || user.email?.split('@')[0] || "" })); setIsModalOpen(true); }}
                                     className="flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-200 text-black rounded-lg font-bold text-[10px] uppercase transition-all shadow-lg active:scale-95">
                                     <Plus className="w-3 h-3" /> Add Review
                                 </button>
                             )}
                         </div>
-                        <div className="grid grid-cols-2 gap-y-6 gap-x-4">
-                            {ratings.map((stat, idx) => {
-                                const score = Number(stat.score);
-                                const barColor = score >= 4.0 ? "bg-green-500" : score >= 2.5 ? "bg-orange-500" : "bg-red-500";
-                                return (
-                                    <div key={idx} className="space-y-2">
-                                        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider">
-                                            <span className="text-white/60">{stat.label}</span>
-                                            <span className={getRatingColor(score)}>{stat.score}</span>
+                        {isNotFound ? (
+                            <div className="py-10 text-center bg-white/5 rounded-2xl border border-white/5 mx-2">
+                                <Search className="w-10 h-10 text-rose-500 mx-auto mb-4 opacity-40 animate-pulse" />
+                                <h4 className="text-lg font-black text-white uppercase tracking-widest mb-1">Train Not Found</h4>
+                                <p className="text-[11px] text-slate-500 uppercase font-bold tracking-tight px-10">We couldn't find any results for "{trainName}". <br/> Please check the train number or name.</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-y-6 gap-x-4">
+                                {ratingsList.map((stat, idx) => {
+                                    const score = Number(stat.score);
+                                    const barColor = score > 0 ? (score >= 4.0 ? "bg-green-500" : score >= 2.5 ? "bg-orange-500" : "bg-red-500") : "bg-white/10";
+                                    return (
+                                        <div key={idx} className="space-y-2">
+                                            <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider">
+                                                <span className="text-white/60">{stat.label}</span>
+                                                <span className={score > 0 ? getRatingColor(score) : "text-slate-600 italic"}>
+                                                    {score > 0 ? score.toFixed(1) : "Be the first to rate!"}
+                                                </span>
+                                            </div>
+                                            <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                                                <div className={`h-full ${barColor} rounded-full transition-all duration-1000`} style={{ width: `${(score / 5) * 100}%` }} />
+                                            </div>
                                         </div>
-                                        <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                                            <div className={`h-full ${barColor} rounded-full`} style={{ width: `${(score / 5) * 100}%` }} />
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
 
                     {/* REVIEW CARDS */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3 bg-[#1D2332] max-h-[320px] md:max-h-[460px]">
-                        {reviews.map((review) => {
-                            const isExp = !!expandedCards[review.id];
-                            return (
-                                <div key={review.id} style={{ borderRadius: 16, border: `1px solid ${isExp ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.05)"}`, background: isExp ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.02)", overflow: "hidden", boxShadow: isExp ? "0 6px 24px rgba(0,0,0,0.35)" : "none", transition: "all 300ms ease" }}>
-
-                                    {/* Header */}
-                                    <button onClick={() => toggleCard(review.id)} style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px 10px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
-                                        <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                                                <span style={{ color: "#fff", fontWeight: 800, fontSize: 13 }}>{review.name}</span>
-                                                {review.verified && <CheckCircle2 size={11} color="#22d3ee" />}
-                                                <span style={{ color: "#334155", fontSize: 10 }}>• {review.date}</span>
-                                            </div>
-                                            {/* Fade-out preview */}
-                                            <div style={{ maxHeight: isExp ? 0 : 18, opacity: isExp ? 0 : 1, overflow: "hidden", transition: "max-height 300ms ease, opacity 200ms ease" }}>
-                                                <p style={{ color: "#475569", fontSize: 10, margin: 0, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>"{review.text}"</p>
-                                            </div>
-                                        </div>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(0,0,0,0.4)", padding: "4px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)" }}>
-                                                <span className={`text-xs font-black ${getRatingColor(review.rating)}`}>{review.rating}</span>
-                                                <Star className={`w-3 h-3 fill-current ${getRatingColor(review.rating)}`} />
-                                            </div>
-                                            {/* Springy chevron */}
-                                            <div style={{ width: 20, height: 20, borderRadius: "50%", background: isExp ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.04)", display: "flex", alignItems: "center", justifyContent: "center", transform: isExp ? "rotate(180deg)" : "rotate(0deg)", transition: "all 500ms cubic-bezier(0.34,1.56,0.64,1)" }}>
-                                                <span style={{ color: "#475569", fontSize: 9, lineHeight: 1 }}>▾</span>
-                                            </div>
-                                        </div>
+                        {reviews.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center py-24 text-center px-10">
+                                <div className="p-5 bg-white/5 rounded-full mb-6">
+                                    <Inbox className="w-10 h-10 text-slate-600 opacity-30" />
+                                </div>
+                                <h4 className="text-xl font-black text-white uppercase tracking-widest mb-3">No Journey Stories Yet</h4>
+                                <p className="text-[11px] text-slate-500 leading-relaxed uppercase font-bold tracking-tight mb-8">This train is waiting for its first review. <br/> Be the pioneer and share your travel experience.</p>
+                                
+                                {user && !isNotFound && (
+                                    <button onClick={() => setIsModalOpen(true)} className="px-8 py-3.5 bg-white text-black rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95 shadow-2xl flex items-center gap-2">
+                                        <Pencil className="w-3.5 h-3.5" /> Post First Review
                                     </button>
+                                )}
+                            </div>
+                        ) : (
+                            reviews.map((review) => {
+                                const isExp = !!expandedCards[review.id];
+                                return (
+                                    <div key={review.id} style={{ borderRadius: 16, border: `1px solid ${isExp ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.05)"}`, background: isExp ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.02)", overflow: "hidden", boxShadow: isExp ? "0 6px 24px rgba(0,0,0,0.35)" : "none", transition: "all 300ms ease" }}>
+                                        {/* Header */}
+                                        <button onClick={() => toggleCard(review.id)} style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px 10px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+                                            <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                                                    <span style={{ color: "#fff", fontWeight: 800, fontSize: 13 }}>{review.name}</span>
+                                                    {review.verified && <CheckCircle2 size={11} color="#22d3ee" />}
+                                                    <span style={{ color: "#334155", fontSize: 10 }}>• {review.date}</span>
+                                                </div>
+                                                <div style={{ maxHeight: isExp ? 0 : 18, opacity: isExp ? 0 : 1, overflow: "hidden", transition: "max-height 300ms ease, opacity 200ms ease" }}>
+                                                    <p style={{ color: "#475569", fontSize: 10, margin: 0, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>"{review.text}"</p>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(0,0,0,0.4)", padding: "4px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)" }}>
+                                                    <span className={`text-xs font-black ${getRatingColor(review.rating)}`}>{review.rating}</span>
+                                                    <Star className={`w-3 h-3 fill-current ${getRatingColor(review.rating)}`} />
+                                                </div>
+                                                {/* Springy chevron */}
+                                                <div style={{ width: 20, height: 20, borderRadius: "50%", background: isExp ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.04)", display: "flex", alignItems: "center", justifyContent: "center", transform: isExp ? "rotate(180deg)" : "rotate(0deg)", transition: "all 500ms cubic-bezier(0.34,1.56,0.64,1)" }}>
+                                                    <span style={{ color: "#475569", fontSize: 9, lineHeight: 1 }}>▾</span>
+                                                </div>
+                                            </div>
+                                        </button>
 
-                                    {/* Spring expand body — max-height + keyframe spring */}
-                                    <div style={{ maxHeight: isExp ? 400 : 0, overflow: "hidden", transition: "max-height 500ms cubic-bezier(0.34,1.3,0.64,1)" }}>
-                                        <div style={{ animation: isExp ? "springReveal 500ms cubic-bezier(0.34,1.4,0.64,1) both" : "none" }}>
-                                            <div style={{ padding: "0 14px 14px" }}>
-                                                <p style={{ color: "#94a3b8", fontSize: 11, lineHeight: 1.6, fontStyle: "italic", borderLeft: "2px solid rgba(255,255,255,0.1)", paddingLeft: 10, margin: "0 0 12px" }}>"{review.text}"</p>
+                                        {/* Spring expand body — max-height + keyframe spring */}
+                                        <div style={{ maxHeight: isExp ? 400 : 0, overflow: "hidden", transition: "max-height 500ms cubic-bezier(0.34,1.3,0.64,1)" }}>
+                                            <div style={{ animation: isExp ? "springReveal 500ms cubic-bezier(0.34,1.4,0.64,1) both" : "none" }}>
+                                                <div style={{ padding: "0 14px 14px" }}>
+                                                    <p style={{ color: "#94a3b8", fontSize: 11, lineHeight: 1.6, fontStyle: "italic", borderLeft: "2px solid rgba(255,255,255,0.1)", paddingLeft: 10, margin: "0 0 12px" }}>"{review.text}"</p>
 
-                                                {review.reviewImages && review.reviewImages.length > 0 && (
-                                                    <div className="flex gap-2 mb-3 overflow-x-auto custom-scrollbar pb-2">
-                                                        {review.reviewImages.map((img, idx) => {
-                                                            const gi = galleryItems.findIndex(g => g.id === `${review.id}-${idx}`);
-                                                            return (
-                                                                <div key={idx} className="flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden cursor-pointer border border-white/10 hover:border-white/30 transition-all" onClick={() => { if (gi !== -1) openLightbox(gi); }}>
-                                                                    <img src={img} alt={`Review attachment ${idx}`} className="w-full h-full object-cover" />
-                                                                </div>
-                                                            );
-                                                        })}
+                                                    <div style={{ display: "flex", gap: 8, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                                                        <button onClick={() => handleLike(review.id, true)} className={`flex items-center gap-1.5 text-[10px] font-bold py-1 px-2 rounded-lg transition-all ${review.userAction === 'like' ? 'bg-white/20 text-white border border-white/20' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}>
+                                                            <ThumbsUp className={`w-3 h-3 ${review.userAction === 'like' ? 'fill-current' : ''}`} /><span>{review.likes}</span>
+                                                        </button>
+                                                        <button onClick={() => handleLike(review.id, false)} className={`flex items-center gap-1.5 text-[10px] font-bold py-1 px-2 rounded-lg transition-all ${review.userAction === 'dislike' ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}>
+                                                            <ThumbsDown className={`w-3 h-3 ${review.userAction === 'dislike' ? 'fill-current' : ''}`} /><span>{review.dislikes}</span>
+                                                        </button>
                                                     </div>
-                                                )}
-                                                {!review.reviewImages && review.reviewImage && (
-                                                    <div className="mb-3 w-20 h-20 rounded-lg overflow-hidden cursor-pointer" onClick={() => { const i = galleryItems.findIndex(g => g.id === review.id); if (i !== -1) openLightbox(i); }}>
-                                                        <img src={review.reviewImage} alt="Review attachment" className="w-full h-full object-cover" />
-                                                    </div>
-                                                )}
-
-                                                <div style={{ display: "flex", gap: 8, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                                                    <button onClick={() => handleLike(review.id, true)} className={`flex items-center gap-1.5 text-[10px] font-bold py-1 px-2 rounded-lg transition-all ${review.userAction === 'like' ? 'bg-white/20 text-white border border-white/20' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}>
-                                                        <ThumbsUp className={`w-3 h-3 ${review.userAction === 'like' ? 'fill-current' : ''}`} /><span>{review.likes}</span>
-                                                    </button>
-                                                    <button onClick={() => handleLike(review.id, false)} className={`flex items-center gap-1.5 text-[10px] font-bold py-1 px-2 rounded-lg transition-all ${review.userAction === 'dislike' ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}>
-                                                        <ThumbsDown className={`w-3 h-3 ${review.userAction === 'dislike' ? 'fill-current' : ''}`} /><span>{review.dislikes}</span>
-                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            );
-                        })}
+                                );
+                            })
+                        )}
                     </div>
-
                 </div>
             </div>
 

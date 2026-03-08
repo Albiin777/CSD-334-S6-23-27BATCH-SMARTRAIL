@@ -132,3 +132,24 @@ create or replace trigger on_auth_user_updated
   after update on auth.users
   for each row execute procedure public.handle_user_update();
 
+-- 13. Create Notifications Table
+create table if not exists public.notifications (
+  id uuid primary key default uuid_generate_v4(),
+  created_at timestamptz default now(),
+  "userId" uuid references auth.users(id) on delete cascade,
+  type varchar(20) not null check (type in ('alert', 'info', 'reminder', 'news')),
+  title varchar(100) not null,
+  message text not null,
+  link varchar(255),
+  "isRead" boolean default false,
+  "forYou" boolean default true
+);
+
+-- 14. Enable RLS for Notifications
+alter table public.notifications enable row level security;
+
+-- 15. Create Policy: Users can view their own notifications or global broadcasts
+create policy "Users can view their own or global notifications"
+on public.notifications for select
+using (auth.uid() = "userId" or "userId" is null);
+

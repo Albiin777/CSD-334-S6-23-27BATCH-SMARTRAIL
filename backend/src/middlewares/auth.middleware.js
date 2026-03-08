@@ -1,12 +1,9 @@
-import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import { supabase } from '../config/supabaseClient.js';
 
 /**
- * Middleware to verify JWT token and protect routes
+ * Middleware to verify Supabase JWT token and protect routes
  */
-export const authenticateToken = (req, res, next) => {
+export const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
@@ -17,12 +14,19 @@ export const authenticateToken = (req, res, next) => {
     }
 
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = decoded; // Attach user info to request
+        const { data: { user }, error } = await supabase.auth.getUser(token);
+        
+        if (error || !user) {
+            return res.status(403).json({
+                error: 'Invalid or expired token.'
+            });
+        }
+
+        req.user = user; // Attach user info to request
         next();
     } catch (error) {
         return res.status(403).json({
-            error: 'Invalid or expired token.'
+            error: 'Authentication failed.'
         });
     }
 };
@@ -30,18 +34,23 @@ export const authenticateToken = (req, res, next) => {
 /**
  * Optional authentication - doesn't fail if no token
  */
-export const optionalAuth = (req, res, next) => {
+export const optionalAuth = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
     if (token) {
         try {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            req.user = decoded;
+            const { data: { user }, error } = await supabase.auth.getUser(token);
+            if (!error && user) {
+                req.user = user;
+            } else {
+                req.user = null;
+            }
         } catch (error) {
-            // Token invalid, but we don't fail - just continue without user
             req.user = null;
         }
+    } else {
+        req.user = null;
     }
 
     next();

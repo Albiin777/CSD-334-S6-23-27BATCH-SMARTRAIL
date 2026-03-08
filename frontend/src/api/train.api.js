@@ -160,6 +160,28 @@ const api = {
             throw new Error(err.error || 'Cancellation failed');
         }
         return await res.json();
+    },
+
+    // --- Seat Blocking ---
+
+    blockSeat: async (blockPayload) => {
+        const res = await fetch(`${API_BASE_URL}/seat-blocks/block`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(blockPayload)
+        });
+        if (!res.ok) throw new Error('Failed to block seat');
+        return await res.json();
+    },
+
+    unblockSeat: async (blockPayload) => {
+        const res = await fetch(`${API_BASE_URL}/seat-blocks/unblock`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(blockPayload)
+        });
+        if (!res.ok) throw new Error('Failed to unblock seat');
+        return await res.json();
     }
 };
 

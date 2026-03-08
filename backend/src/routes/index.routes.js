@@ -8,6 +8,9 @@ import { searchStations, getStationDetails } from '../controllers/train.controll
 import bookingRoutes from './booking.routes.js';
 import unreservedRoutes from './unreserved.routes.js';
 import reviewRoutes from './review.routes.js';
+import notificationRoutes from './notification.routes.js';
+import profileRoutes from './profile.routes.js';
+import seatBlockRoutes from './seat_block.routes.js';
 
 // We map everything under /api 
 const router = Router();
@@ -23,5 +26,7 @@ router.use('/stations', stationRouter);
 router.use('/bookings', bookingRoutes);
 router.use('/unreserved', unreservedRoutes);
 router.use('/reviews', reviewRoutes);
+router.use('/notifications', notificationRoutes);
+router.use('/seat-blocks', seatBlockRoutes);
 
 export default router;

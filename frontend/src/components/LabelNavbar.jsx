@@ -168,10 +168,22 @@ function LabelNavbar({ hidden, setHidden }) {
           Support
           <span className="absolute left-0 -bottom-1 h-[2px] w-0 bg-[#2B2B2B] transition-all duration-300 group-hover:w-full"></span>
         </button>
-        <Link to="/" className={navItem}>
+        <button onClick={(e) => {
+          e.preventDefault();
+          if (window.location.pathname !== "/") {
+            navigate("/");
+            setTimeout(() => {
+              const el = document.getElementById("about-section");
+              if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 80);
+          } else {
+            const el = document.getElementById("about-section");
+            if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }} className={navItem}>
           About Us
           <span className="absolute left-0 -bottom-1 h-[2px] w-0 bg-[#2B2B2B] transition-all duration-300 group-hover:w-full"></span>
-        </Link>
+        </button>
       </div>
     </nav>
   );

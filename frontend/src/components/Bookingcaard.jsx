@@ -118,6 +118,22 @@ export default function BookingCard() {
 
   /* ================= NAVIGATE ================= */
   const handleSearch = () => {
+    // Date validation
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const maxDate = new Date();
+    maxDate.setDate(now.getDate() + 60);
+    maxDate.setHours(23, 59, 59, 999);
+
+    if (selectedDate < now) {
+      setError("Departure date cannot be in the past");
+      return;
+    }
+    if (selectedDate > maxDate) {
+      setError("Bookings are only allowed up to 2 months (60 days) in advance");
+      return;
+    }
+
     if (searchMode === "route") {
       if (!from || !to) {
         setError("Please select both source and destination");
@@ -326,8 +342,15 @@ export default function BookingCard() {
                 {/* Hidden Date Input styling WebKit native icon to cover full bounds */}
                 <input
                   type="date"
+                  min={new Date().toISOString().split("T")[0]}
+                  max={new Date(new Date().setDate(new Date().getDate() + 60)).toISOString().split("T")[0]}
                   value={selectedDate.toISOString().split("T")[0]}
-                  onChange={(e) => setSelectedDate(new Date(e.target.value))}
+                  onChange={(e) => {
+                    const newDate = new Date(e.target.value);
+                    if (!isNaN(newDate.getTime())) {
+                      setSelectedDate(newDate);
+                    }
+                  }}
                   onClick={(e) => {
                     try {
                       e.target.showPicker();

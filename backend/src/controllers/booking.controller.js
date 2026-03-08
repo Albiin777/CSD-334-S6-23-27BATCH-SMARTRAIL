@@ -9,6 +9,26 @@ const createBookingHandler = async (req, res) => {
             return res.status(400).json({ error: "Missing required booking details." });
         }
 
+        // Date Validation: 2 months (60 days) limit
+        const journeyDateObj = new Date(journeyDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const maxBookingDate = new Date();
+        maxBookingDate.setDate(today.getDate() + 60);
+        maxBookingDate.setHours(23, 59, 59, 999);
+
+        if (isNaN(journeyDateObj.getTime())) {
+            return res.status(400).json({ error: "Invalid journey date format." });
+        }
+
+        if (journeyDateObj < today) {
+            return res.status(400).json({ error: "Journey date cannot be in the past." });
+        }
+
+        if (journeyDateObj > maxBookingDate) {
+            return res.status(400).json({ error: "Bookings are only allowed up to 2 months (60 days) in advance." });
+        }
+
         // Fetch Schedule (Fallback to generic schedule if not in local mock DB due to RapidAPI migration)
         let trainSchedule = [];
         const train = dataStore.trains.find(t => t.trainNumber === String(trainNumber));
@@ -23,15 +43,18 @@ const createBookingHandler = async (req, res) => {
             ];
         }
 
-        const booking = await bookingService.createBooking({
-            trainNumber,
-            journeyDate,
-            classCode,
-            source,
-            destination,
-            passengers,
-            trainSchedule: trainSchedule
-        });
+        const userId = req.user?.id || null; // Captured from optionalAuth if logged in
+
+        const booking = await bookingService.bookTicket(
+            trainNumber, 
+            source, 
+            destination, 
+            journeyDate, 
+            classCode, 
+            passengers, 
+            trainSchedule, 
+            userId
+        );
 
         res.status(201).json(booking);
     } catch (err) {
@@ -86,9 +109,23 @@ const getBookedSeatsHandler = async (req, res) => {
     }
 };
 
+const getBookingHistoryHandler = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+        const history = await bookingService.getBookingHistoryByUserId(userId);
+        res.status(200).json(history);
+    } catch (err) {
+        console.error("Booking History Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
 export default {
     createBookingHandler,
     cancelBookingHandler,
     getBookingStatusHandler,
-    getBookedSeatsHandler
+    getBookedSeatsHandler,
+    getBookingHistoryHandler
 };

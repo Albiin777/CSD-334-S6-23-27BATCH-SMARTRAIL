@@ -75,10 +75,13 @@ const doSegmentsOverlap = (reqFrom, reqTo, existingFrom, existingTo) => {
 };
 
 // ---------------------------------------------
-// CORE SERVICE: Create Booking
+// CORE SERVICE: Book a Ticket (handles CNF, RAC, WL logic)
 // ---------------------------------------------
-const createBooking = async ({ trainNumber, journeyDate, classCode, source, destination, passengers, trainSchedule }) => {
+const bookTicket = async (trainNumber, source, destination, journeyDate, classCode, passengers, trainSchedule, userId = null) => {
 
+    // 1. Validate Input
+    if (!passengers || passengers.length === 0) throw new Error('No passengers provided');
+    
     // 1. Get Station Indexes
     const fromIndex = getStationIndex(trainSchedule, source);
     const toIndex = getStationIndex(trainSchedule, destination);
@@ -206,7 +209,8 @@ const createBooking = async ({ trainNumber, journeyDate, classCode, source, dest
             source,
             destination,
             fromIndex,
-            toIndex
+            toIndex,
+            user_id: userId // Tracks who made the booking
         })
         .select()
         .single();
@@ -227,6 +231,54 @@ const createBooking = async ({ trainNumber, journeyDate, classCode, source, dest
         // Rollback (Manual since Supabase HTTP API doesn't support transactions easily without RPC)
         await supabase.from('pnr_bookings').delete().eq('id', bookingData.id);
         throw new Error('Failed to add passengers: ' + passengerError.message);
+    }
+
+    // --- NEW: Generate Notification ---
+    // Extract the primary status of the booking to determine the notification type/message
+    const primaryStatus = passengerRecords[0].status; // CNF, RAC, WL
+    let notifTitle = '';
+    let notifMessage = '';
+    let notifType = 'info';
+
+    switch (primaryStatus) {
+        case 'CNF':
+            notifTitle = 'Ticket Confirmed! 🎉';
+            notifMessage = `Your booking for Train ${trainNumber} is confirmed. PNR: ${pnr}.`;
+            notifType = 'info';
+            break;
+        case 'RAC':
+            notifTitle = 'RAC Ticket Issued';
+            notifMessage = `You hold an RAC ticket (PNR: ${pnr}) for Train ${trainNumber}. You can board the train but will share a seat.`;
+            notifType = 'reminder';
+            break;
+        case 'WL':
+            notifTitle = 'Waitlisted Ticket';
+            notifMessage = `Your ticket for Train ${trainNumber} is on the Waitlist (PNR: ${pnr}). We will notify you if it confirms.`;
+            notifType = 'alert';
+            break;
+    }
+
+    // Try to get the currently logged-in user from the client (since this is server side without direct req access here easily, 
+    // we need to be careful if user_id isn't explicitly passed. Wait, booking.service doesn't receive `userId`.
+    // Let's modify the signature or assume we need to accept userId in the controller).
+    // Let's check `booking.controller.js` to see if userId is available. If not, we skip for now or we must update it.
+    
+    // If we have a userId, insert the notification
+    if (userId) {
+        try {
+            await supabase.from('notifications').insert([
+                {
+                    user_id: userId,
+                    type: notifType,
+                    title: notifTitle,
+                    message: notifMessage,
+                    for_you: true,
+                    link: `/pnr-status?pnr=${pnr}`
+                }
+            ]);
+        } catch (notifErr) {
+            console.error("Failed to insert booking notification (non-fatal):", notifErr.message);
+        }
     }
 
     return { pnr, status: passengerRecords[0].status, passengers: passengerRecords };
@@ -394,7 +446,7 @@ const getBookingStatus = async (pnr) => {
 // Get Booked Seats List (for Seat Layout View)
 // ---------------------------------------------
 const getBookedSeatsList = async (trainNumber, journeyDate) => {
-    // 1. Fetch all non-cancelled bookings for this train and date
+    // 1. Fetch all confirmed bookings for this train and date
     const { data: bookings, error } = await supabase
         .from('pnr_bookings')
         .select(`
@@ -405,32 +457,73 @@ const getBookedSeatsList = async (trainNumber, journeyDate) => {
             )
         `)
         .eq('train_number', String(trainNumber))
-        .eq('journey_date', journeyDate)
-        .neq('status', 'CANCELLED');
+        .eq('journey_date', journeyDate);
 
     if (error) {
         console.error("Error fetching bookings for layout:", error);
         return [];
     }
 
-    // 2. Extract seat numbers -> 'coachId-seatNumber'
-    const bookedSeatIds = [];
+    // 2. Fetch all ACTIVE (non-expired) seat blocks
+    const now = new Date().toISOString();
+    const { data: blockedSeats, error: blockError } = await supabase
+        .from('seat_blocks')
+        .select('seat_id')
+        .eq('train_number', String(trainNumber))
+        .eq('journey_date', journeyDate)
+        .gt('expires_at', now);
+
+    if (blockError) {
+        console.error("Error fetching seat blocks for layout:", blockError);
+    }
+
+    // 3. Extract seat numbers -> 'coachId-seatNumber'
+    const unavailableSeatIds = new Set();
+    
+    // Confirmed bookings
     bookings.forEach(booking => {
         if (booking.passengers) {
             booking.passengers.forEach(p => {
                 if (p.seat_number && p.status === 'CNF') {
-                    bookedSeatIds.push(p.seat_number);
+                    unavailableSeatIds.add(p.seat_number);
                 }
             });
         }
     });
 
-    return bookedSeatIds;
+    // Temporary blocks
+    if (blockedSeats) {
+        blockedSeats.forEach(b => {
+            unavailableSeatIds.add(b.seat_id);
+        });
+    }
+
+    return Array.from(unavailableSeatIds);
+};
+
+// ---------------------------------------------
+// CORE SERVICE: Get Booking History (By User ID)
+// ---------------------------------------------
+const getBookingHistoryByUserId = async (userId) => {
+    const { data: bookings, error } = await supabase
+        .from('pnr_bookings')
+        .select(`
+            *,
+            passengers (
+                id, name, age, gender, status, seatNumber, racNumber, wlNumber
+            )
+        `)
+        .eq('user_id', userId)
+        .order('journeyDate', { ascending: false });
+
+    if (error) throw new Error('Failed to fetch booking history: ' + error.message);
+    return bookings || [];
 };
 
 export default {
-    createBooking,
+    bookTicket,
     cancelBooking,
     getBookingStatus,
-    getBookedSeatsList
+    getBookedSeatsList,
+    getBookingHistoryByUserId
 };

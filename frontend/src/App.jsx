@@ -17,6 +17,9 @@ import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from
 import SeatLayout from "./pages/SeatLayout";
 import PaymentGateway from "./pages/PaymentGateway";
 import AllNotifications from "./pages/AllNotifications";
+import MyAccount from "./pages/MyAccount";
+import MyBookings from "./pages/MyBookings";
+import AboutSection from "./components/AboutSection";
 
 import { supabase } from "./utils/supabaseClient";
 
@@ -169,6 +172,8 @@ export default function App() {
     location.pathname.startsWith('/payment') ||
     location.pathname.startsWith('/results') ||
     location.pathname.startsWith('/notifications') ||
+    location.pathname.startsWith('/my-account') ||
+    location.pathname.startsWith('/my-bookings') ||
     location.pathname.startsWith('/passenger-details');
 
   const swapStations = () => {
@@ -277,6 +282,9 @@ export default function App() {
                     <Reviews />
                   </div>
                   <Support autoScroll={false} />
+                  <div id="about-section" className="scroll-mt-[120px]">
+                    <AboutSection />
+                  </div>
                 </>
               }
             />
@@ -291,7 +299,16 @@ export default function App() {
               </div>
             } />
             <Route path="/notifications" element={<AllNotifications />} />
-            <Route path="/support" element={<Support />} />
+            <Route path="/support" element={
+              <>
+                <Support />
+                <div id="about-section" className="scroll-mt-[120px]">
+                  <AboutSection />
+                </div>
+              </>
+            } />
+            <Route path="/my-account" element={<MyAccount />} /> {/* Added new route */}
+            <Route path="/my-bookings" element={<MyBookings />} /> {/* Added new route */}
           </Routes>
         </main>
       </div>
