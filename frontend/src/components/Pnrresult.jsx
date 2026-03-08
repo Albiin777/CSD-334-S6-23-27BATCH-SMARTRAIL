@@ -1,4 +1,5 @@
 import { Train, Clock, MapPin, IndianRupee, ChevronRight, Share2, Download, Ticket } from "lucide-react";
+import QRCode from "react-qr-code";
 
 export default function PNRResult({ pnrData, onReset }) {
   const handlePassengerClick = (passenger) => {
@@ -105,9 +106,12 @@ export default function PNRResult({ pnrData, onReset }) {
         <div className="w-full md:w-[320px] bg-[#FFFFFF]/5 p-6 md:p-8 flex flex-col justify-between md:border-l border-white/5 text-white">
 
           <div>
-            <div className="mb-8">
-              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">PNR Number</span>
-              <p className="text-3xl font-black text-white tracking-[0.1em] mt-1 [text-shadow:0_0_20px_rgba(255,255,255,0.1)]">{pnrData.pnr}</p>
+<div className="mb-4">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">PNR Number</span>
+                <p className="text-3xl font-black text-white tracking-[0.1em] mt-1 [text-shadow:0_0_20px_rgba(255,255,255,0.1)]">{pnrData.pnr}</p>
+              </div>
+              <div className="mb-8 flex justify-center bg-white p-3 rounded-xl max-w-fit mx-auto md:mx-0">
+                <QRCode value={pnrData.pnr} size={120} level="M" />
             </div>
 
             <div className="space-y-4">

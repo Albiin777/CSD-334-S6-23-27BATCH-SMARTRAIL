@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabaseClient';
 import { Train, Calendar, MapPin, Search, ArrowRight, Loader2, Ticket, ShieldCheck, Home } from 'lucide-react';
+import QRCode from "react-qr-code";
 
 export default function MyBookings() {
     const [bookings, setBookings] = useState([]);
@@ -145,11 +146,16 @@ export default function MyBookings() {
                                                 <h3 className="text-xl font-bold text-white leading-tight">#{booking.trainNumber}</h3>
                                             </div>
                                         </div>
-                                        <div className="text-right">
-                                            <div className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-0.5">PNR Reference</div>
-                                            <div className="text-lg font-mono font-bold text-white leading-tight">{booking.pnr}</div>
-                                        </div>
-                                    </div>
+                                          <div className="text-right flex flex-col items-end gap-2">
+                                              <div>
+                                                  <div className="text-[10px] font-bold uppercase tracking-widest text-gray-700 mb-0.5">PNR Reference</div>
+                                                  <div className="text-lg font-mono font-bold text-white leading-tight">{booking.pnr}</div>
+                                              </div>
+                                              <div className="bg-white p-2 rounded-lg">
+                                                  <QRCode value={booking.pnr} size={64} level="M" />
+                                              </div>
+                                          </div>
+                                      </div>
 
                                     <div className="flex items-center justify-between gap-6 mb-8 px-2">
                                         <div className="flex-1">
