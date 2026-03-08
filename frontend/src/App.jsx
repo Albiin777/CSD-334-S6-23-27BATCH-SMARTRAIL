@@ -16,7 +16,7 @@ import PassengerDetails from "./pages/PassengerDetails";
 
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminTrainView from "./pages/AdminTrainView";
-import TteDashboard from "./pages/TteDashboard";
+import TTEPage from "./pages/TTEPage";
 import AllNotifications from "./pages/AllNotifications";
 
 import TrainManagement from "./pages/admin/TrainManagement";
@@ -335,8 +335,7 @@ export default function App() {
             <Route path="/my-bookings" element={<MyBookings />} /> {/* Added new route */}
 
             {/* TTE Route */}
-            <Route path="/tte" element={<TteDashboard />} />
-
+              <Route path="/tte/*" element={<TTEPage />} />
             {/* --- Admin Portal (Nested Routes) --- */}
             <Route path="/admin" element={
               <AdminProtectedRoute>
