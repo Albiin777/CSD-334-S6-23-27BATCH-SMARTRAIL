@@ -89,6 +89,15 @@ export default function MyAccount() {
 
     const handleUpdateEmail = async (e) => {
         if (e) e.preventDefault();
+
+        // Check if the user entered the same email
+        if (newEmail.toLowerCase().trim() === user?.email?.toLowerCase().trim()) {
+            setIsEditingEmail(false);
+            setMessage("You are already using this email address.");
+            setMessageType('error');
+            return;
+        }
+
         setMessage('');
         setMessageType('info');
         setIsProcessing(true);
@@ -108,14 +117,23 @@ export default function MyAccount() {
 
     const handleUpdatePhone = async (e) => {
         if (e) e.preventDefault();
+        
+        let formattedPhone = newPhone.trim();
+        if (!formattedPhone.startsWith('+91') && formattedPhone !== '') {
+            formattedPhone = '+91' + formattedPhone.replace(/^\+/, '');
+        }
+
+        // Check if the user entered the same phone number
+        if (formattedPhone === user?.phone || newPhone.trim() === user?.phone) {
+            setIsEditingPhone(false);
+            setMessage("You are already using this phone number.");
+            setMessageType('error');
+            return;
+        }
+
         setMessage('');
         setMessageType('info');
         setIsProcessing(true);
-        
-        let formattedPhone = newPhone;
-        if (!formattedPhone.startsWith('+91')) {
-            formattedPhone = '+91' + formattedPhone.replace(/^\+/, '');
-        }
 
         try {
             const { error } = await supabase.auth.updateUser({ phone: formattedPhone });
