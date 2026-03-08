@@ -9,6 +9,7 @@ export default function TrainSchedule() {
 
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [scheduleData, setScheduleData] = useState(null);
+    const [trainRunsOnDate, setTrainRunsOnDate] = useState(true);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
@@ -59,6 +60,7 @@ export default function TrainSchedule() {
         setError("");
         setLoading(true);
         setScheduleData(null);
+        setTrainRunsOnDate(true);
 
         try {
             // Get the schedule array
@@ -74,6 +76,14 @@ export default function TrainSchedule() {
                 }
             } catch (e) { } // fine, we'll use fallback info
 
+            // Check if train runs on selected date
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const dayOfWeek = days[selectedDate.getDay()];
+            const runsOnDate = !trainDetails.runningDays || 
+                             trainDetails.runningDays.length === 0 || 
+                             trainDetails.runningDays.includes(dayOfWeek);
+            
+            setTrainRunsOnDate(runsOnDate);
             setScheduleData({ ...trainDetails, schedule: scheduleArray });
         } catch (err) {
             setError("Failed to load train schedule. Please try again.");
@@ -191,6 +201,7 @@ export default function TrainSchedule() {
                         <input
                             type="date"
                             min={new Date().toISOString().split("T")[0]}
+                            max={new Date(new Date().setDate(new Date().getDate() + 60)).toISOString().split("T")[0]}
                             value={selectedDate.toISOString().split("T")[0]}
                             onChange={(e) => {
                                 const newDate = new Date(e.target.value);
@@ -212,11 +223,11 @@ export default function TrainSchedule() {
             </div>
 
             {/* TIMELINE UI */}
-            {scheduleData && !loading && Object.keys(timelineDataByDay).length > 0 && (
+            {scheduleData && !loading && (
                 <div className="bg-[#1D2332] rounded-2xl md:rounded-[28px] border border-white/5 overflow-hidden flex flex-col max-h-[700px] relative">
 
                     {/* Header Banner */}
-                    <div className="bg-white/5 p-6 border-b border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0 shadow-sm z-40 sticky top-0 backdrop-blur-md">
+                    <div className="bg-[#1D2332] p-6 border-b border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0 shadow-lg z-40 sticky top-0">
                         <div>
                             <h3 className="text-xl font-black text-white">{scheduleData.trainName} <span className="text-slate-400 font-medium tracking-wide">({scheduleData.trainNumber})</span></h3>
                             <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">
@@ -232,7 +243,7 @@ export default function TrainSchedule() {
 
                     <div className="flex flex-col flex-1 overflow-hidden relative bg-[#0f172a]/30">
                         {/* Table Header Row (Hidden on Mobile) */}
-                        <div className="bg-white/[0.03] py-2 px-4 shadow-sm z-30 border-b border-white/5 shrink-0 sticky top-0 hidden sm:flex items-center backdrop-blur-sm">
+                        <div className="bg-[#2a3142] py-2 px-4 shadow-sm z-30 border-b border-white/5 shrink-0 sticky top-[-1px] hidden sm:flex items-center">
                             <div className="w-24 text-center text-[10px] font-black tracking-widest text-slate-500 uppercase">Arrival</div>
                             <div className="w-8 shrink-0"></div>
                             <div className="flex-1 pl-4 text-[10px] font-black tracking-widest text-slate-500 uppercase text-left">Station</div>
@@ -241,142 +252,164 @@ export default function TrainSchedule() {
 
                         {/* Timeline Scrollable Container */}
                         <div className="overflow-y-auto custom-scrollbar flex-1 relative px-0 pb-12">
+                            {!trainRunsOnDate ? (
+                                <div className="flex flex-col items-center justify-center py-10 px-8 text-center gap-4">
+                                    <div>
+                                        <h3 className="text-2xl font-black text-white uppercase tracking-tight">Train does not run on this day</h3>
+                                        <p className="text-slate-400 mt-2 max-w-sm mx-auto leading-relaxed">
+                                            The <span className="text-white font-bold">{scheduleData.trainName}</span> is not scheduled to operate on <span className="text-rose-400 font-bold">{formatDate(selectedDate)}</span>. Please select another date or check the "Runs" info above.
+                                        </p>
+                                    </div>
+                                    <button 
+                                        onClick={() => {
+                                            const nextRun = new Date(selectedDate);
+                                            nextRun.setDate(nextRun.getDate() + 1);
+                                            setSelectedDate(nextRun);
+                                        }}
+                                        className="mt-4 px-6 py-2 bg-white/5 hover:bg-white/10 text-white text-xs font-black uppercase tracking-widest rounded-lg border border-white/10 transition-all"
+                                    >
+                                        Try Next Day
+                                    </button>
+                                </div>
+                            ) : Object.keys(timelineDataByDay).length > 0 ? (
+                                <div className="flex flex-col">
+                                    {Object.entries(timelineDataByDay).map(([day, segments], dayIndex) => {
 
-                            <div className="flex flex-col">
-                                {Object.entries(timelineDataByDay).map(([day, segments], dayIndex) => {
-
-                                    return (
-                                        <div key={`day-${day}`} className="mb-0">
-                                            {/* DAY HEADER */}
-                                            <div className="sticky top-0 z-20 py-1.5 px-4 sm:px-8 bg-[#0f172a] border-b border-white/5 flex items-center gap-3">
-                                                <div className="w-5 h-5 rounded-full bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20">
-                                                    <Clock className="w-2.5 h-2.5 text-indigo-400" />
+                                        return (
+                                            <div key={`day-${day}`} className="mb-0">
+                                                {/* DAY HEADER */}
+                                                <div className="sticky top-0 z-20 py-1.5 px-4 sm:px-8 bg-[#0f172a] border-b border-white/5 flex items-center gap-3">
+                                                    <div className="w-5 h-5 rounded-full bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20">
+                                                        <Clock className="w-2.5 h-2.5 text-indigo-400" />
+                                                    </div>
+                                                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Day {day}</span>
                                                 </div>
-                                                <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Day {day}</span>
-                                            </div>
 
-                                            {segments.map((segment, segmentIndexInDay) => {
-                                                const { mainStop, intermediates } = segment;
-                                                const hasIntermediates = intermediates.length > 0;
+                                                {segments.map((segment, segmentIndexInDay) => {
+                                                    const { mainStop, intermediates } = segment;
+                                                    const hasIntermediates = intermediates.length > 0;
 
-                                                // These are rough definitions for the timeline line UI
-                                                const isFirst = globalSegmentIdx === 0;
-                                                const isLastDay = dayIndex === Object.keys(timelineDataByDay).length - 1;
-                                                const isLast = isLastDay && segmentIndexInDay === segments.length - 1;
+                                                    // These are rough definitions for the timeline line UI
+                                                    const isFirst = globalSegmentIdx === 0;
+                                                    const isLastDay = dayIndex === Object.keys(timelineDataByDay).length - 1;
+                                                    const isLast = isLastDay && segmentIndexInDay === segments.length - 1;
 
-                                                const currentIdx = globalSegmentIdx++;
-                                                const isExpanded = !!expandedSegments[currentIdx];
+                                                    const currentIdx = globalSegmentIdx++;
+                                                    const isExpanded = !!expandedSegments[currentIdx];
 
-                                                return (
-                                                    <React.Fragment key={`segment-${currentIdx}`}>
-                                                        {/* MAIN STOP ROW */}
-                                                        <div
-                                                            onClick={() => {
-                                                                if (hasIntermediates) toggleSegment(currentIdx);
-                                                            }}
-                                                            className={`flex items-stretch w-full transition-colors relative group ${hasIntermediates ? 'cursor-pointer hover:bg-white/[0.04]' : 'hover:bg-white/[0.02]'}`}
-                                                        >
+                                                    return (
+                                                        <React.Fragment key={`segment-${currentIdx}`}>
+                                                            {/* MAIN STOP ROW */}
+                                                            <div
+                                                                onClick={() => {
+                                                                    if (hasIntermediates) toggleSegment(currentIdx);
+                                                                }}
+                                                                className={`flex items-stretch w-full transition-colors relative group ${hasIntermediates ? 'cursor-pointer hover:bg-white/[0.04]' : 'hover:bg-white/[0.02]'}`}
+                                                            >
 
-                                                            {/* LEFT COLUMN: Arrival Time / Station Code */}
-                                                            <div className="w-16 sm:w-24 shrink-0 flex flex-col items-center justify-center py-4 text-center">
-                                                                <span className="text-sm font-black text-white">{mainStop.stationCode}</span>
-                                                                {isFirst ? (
-                                                                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-1">STARTS</span>
-                                                                ) : (
-                                                                    <span className="text-sm font-bold text-slate-300 mt-1 font-mono tracking-wider">{mainStop.arrivalTime || '--:--'}</span>
-                                                                )}
-                                                            </div>
-
-                                                            {/* CENTER TIMELINE DOT & LINE */}
-                                                            <div className="w-8 shrink-0 flex flex-col items-center justify-center relative hidden sm:flex">
-                                                                {!isFirst && <div className="absolute top-0 h-1/2 w-[2px] bg-[#60A5FA]/80"></div>}
-                                                                {(!isLast || hasIntermediates) && <div className="absolute bottom-0 h-[100%] w-[2px] bg-[#60A5FA]/80"></div>}
-
-                                                                {/* Central Dot */}
-                                                                <div className={`w-3.5 h-3.5 rounded-full z-10 transition-colors
-                                                                    ${isFirst ? 'bg-[#60A5FA] ring-[4px] ring-[#1D2332]/80 group-hover:bg-blue-300'
-                                                                        : isLast ? 'bg-[#60A5FA] ring-[4px] ring-[#1D2332]/80 group-hover:bg-blue-300'
-                                                                            : 'bg-[#60A5FA] border-[2px] border-[#1D2332] group-hover:bg-blue-300'}`}
-                                                                ></div>
-                                                            </div>
-
-                                                            {/* RIGHT COLUMN: Station Name, Distance, Platform, Departure Time */}
-                                                            <div className="flex-1 min-w-0 flex items-center justify-between sm:pl-4 pl-3 py-4 ml-2 sm:ml-0 border-l-[2px] border-[#60A5FA]/30 sm:border-0 mr-4 sm:mr-0">
-                                                                <div className="flex flex-col justify-center">
-                                                                    <span className="text-[15px] font-bold text-white leading-tight flex items-center flex-wrap gap-2">
-                                                                        {mainStop.stationName}
-                                                                        {hasIntermediates && (
-                                                                            <span className="text-[9px] text-slate-400 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded ml-1 opacity-70 group-hover:opacity-100 transition-opacity uppercase tracking-widest flex items-center gap-1">
-                                                                                {intermediates.length} Passes {isExpanded ? '▴' : '▾'}
-                                                                            </span>
-                                                                        )}
-                                                                    </span>
-                                                                    <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 mt-1 uppercase tracking-wider">
-                                                                        <span>{mainStop.distanceFromSourceKm} km</span>
-                                                                        {(mainStop.platform || mainStop.haltTimeMinutes > 0) && (
-                                                                            <span className="text-slate-700">|</span>
-                                                                        )}
-                                                                        {mainStop.platform && (
-                                                                            <span className="text-[#60A5FA]">PF #{mainStop.platform}</span>
-                                                                        )}
-                                                                        {mainStop.haltTimeMinutes > 0 && (
-                                                                            <>
-                                                                                {mainStop.platform && <span className="text-slate-700">|</span>}
-                                                                                <span>{mainStop.haltTimeMinutes}m Halt</span>
-                                                                            </>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-
-                                                                <div className="text-right flex flex-col items-end justify-center sm:pr-6 shrink-0 ml-2">
-                                                                    {isLast ? (
-                                                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-1">ENDS</span>
+                                                                {/* LEFT COLUMN: Arrival Time / Station Code */}
+                                                                <div className="w-16 sm:w-24 shrink-0 flex flex-col items-center justify-center py-4 text-center">
+                                                                    <span className="text-sm font-black text-white">{mainStop.stationCode}</span>
+                                                                    {isFirst ? (
+                                                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-1">STARTS</span>
                                                                     ) : (
-                                                                        <span className="text-sm font-bold text-slate-300 font-mono tracking-wider">{mainStop.departureTime || '--:--'}</span>
+                                                                        <span className="text-sm font-bold text-slate-300 mt-1 font-mono tracking-wider">{mainStop.arrivalTime || '--:--'}</span>
                                                                     )}
                                                                 </div>
-                                                            </div>
-                                                        </div>
 
-                                                        {/* INTERMEDIATE STATIONS (Expanded list) */}
-                                                        {isExpanded && hasIntermediates && (
-                                                            <div className="flex w-full relative">
-                                                                <div className="w-16 sm:w-24 shrink-0"></div>
+                                                                {/* CENTER TIMELINE DOT & LINE */}
+                                                                <div className="w-8 shrink-0 flex flex-col items-center justify-center relative hidden sm:flex">
+                                                                    {!isFirst && <div className="absolute top-0 h-1/2 w-[2px] bg-[#60A5FA]/80"></div>}
+                                                                    {(!isLast || hasIntermediates) && <div className="absolute bottom-0 h-[100%] w-[2px] bg-[#60A5FA]/80"></div>}
 
-                                                                {/* Continuing blue line through intermediates */}
-                                                                <div className="w-8 shrink-0 flex items-center justify-center relative hidden sm:flex">
-                                                                    <div className="absolute top-0 bottom-0 w-[2px] bg-[#60A5FA]/30"></div>
+                                                                    {/* Central Dot */}
+                                                                    <div className={`w-3.5 h-3.5 rounded-full z-10 transition-colors
+                                                                        ${isFirst ? 'bg-[#60A5FA] ring-[4px] ring-[#1D2332]/80 group-hover:bg-blue-300'
+                                                                            : isLast ? 'bg-[#60A5FA] ring-[4px] ring-[#1D2332]/80 group-hover:bg-blue-300'
+                                                                                : 'bg-[#60A5FA] border-[2px] border-[#1D2332] group-hover:bg-blue-300'}`}
+                                                                    ></div>
                                                                 </div>
 
-                                                                <div className="flex-1 min-w-0 sm:pl-4 pl-3 py-2 pr-4 sm:pr-6 border-l-[2px] border-[#60A5FA]/30 sm:border-0 ml-2 sm:ml-0">
-                                                                    <div className="flex flex-col gap-1 py-1">
-                                                                        {intermediates.map((intStop, intIdx) => (
-                                                                            <div key={`int-${currentIdx}-${intIdx}`} className="flex justify-between items-center text-slate-500 py-1.5 pl-3 border-l-2 border-white/10 ml-2 hover:border-[#60A5FA]/40 hover:bg-white/[0.04] rounded-r-md transition-colors cursor-default">
-                                                                                <div className="flex flex-col">
-                                                                                    <span className="text-xs font-semibold text-slate-400 flex items-center gap-2">
-                                                                                        {intStop.stationName}
-                                                                                        <span className="text-[9px] text-slate-600 font-mono">{intStop.stationCode}</span>
-                                                                                    </span>
-                                                                                    <div className="flex gap-2 items-center mt-0.5">
-                                                                                        <span className="text-[10px] font-medium tracking-wide">{intStop.distanceFromSourceKm} km</span>
-                                                                                    </div>
-                                                                                </div>
-                                                                                <div className="text-[11px] font-medium font-mono text-slate-500 bg-white/5 px-2 py-0.5 rounded">
-                                                                                    {intStop.arrivalTime || '--:--'}
-                                                                                </div>
-                                                                            </div>
-                                                                        ))}
+                                                                {/* RIGHT COLUMN: Station Name, Distance, Platform, Departure Time */}
+                                                                <div className="flex-1 min-w-0 flex items-center justify-between sm:pl-4 pl-3 py-4 ml-2 sm:ml-0 border-l-[2px] border-[#60A5FA]/30 sm:border-0 mr-4 sm:mr-0">
+                                                                    <div className="flex flex-col justify-center">
+                                                                        <span className="text-[15px] font-bold text-white leading-tight flex items-center flex-wrap gap-2">
+                                                                            {mainStop.stationName}
+                                                                            {hasIntermediates && (
+                                                                                <span className="text-[9px] text-slate-400 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded ml-1 opacity-70 group-hover:opacity-100 transition-opacity uppercase tracking-widest flex items-center gap-1">
+                                                                                    {intermediates.length} Passes {isExpanded ? '▴' : '▾'}
+                                                                                </span>
+                                                                            )}
+                                                                        </span>
+                                                                        <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 mt-1 uppercase tracking-wider">
+                                                                            <span>{mainStop.distanceFromSourceKm} km</span>
+                                                                            {(mainStop.platform || mainStop.haltTimeMinutes > 0) && (
+                                                                                <span className="text-slate-700">|</span>
+                                                                            )}
+                                                                            {mainStop.platform && (
+                                                                                <span className="text-[#60A5FA]">PF #{mainStop.platform}</span>
+                                                                            )}
+                                                                            {mainStop.haltTimeMinutes > 0 && (
+                                                                                <>
+                                                                                    {mainStop.platform && <span className="text-slate-700">|</span>}
+                                                                                    <span>{mainStop.haltTimeMinutes}m Halt</span>
+                                                                                </>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="text-right flex flex-col items-end justify-center sm:pr-6 shrink-0 ml-2">
+                                                                        {isLast ? (
+                                                                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-1">ENDS</span>
+                                                                        ) : (
+                                                                            <span className="text-sm font-bold text-slate-300 font-mono tracking-wider">{mainStop.departureTime || '--:--'}</span>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                        )}
-                                                    </React.Fragment>
-                                                );
-                                            })}
-                                        </div>
-                                    );
-                                })}
-                            </div>
+
+                                                            {/* INTERMEDIATE STATIONS (Expanded list) */}
+                                                            {isExpanded && hasIntermediates && (
+                                                                <div className="flex w-full relative">
+                                                                    <div className="w-16 sm:w-24 shrink-0"></div>
+
+                                                                    {/* Continuing blue line through intermediates */}
+                                                                    <div className="w-8 shrink-0 flex items-center justify-center relative hidden sm:flex">
+                                                                        <div className="absolute top-0 bottom-0 w-[2px] bg-[#60A5FA]/30"></div>
+                                                                    </div>
+
+                                                                    <div className="flex-1 min-w-0 sm:pl-4 pl-3 py-2 pr-4 sm:pr-6 border-l-[2px] border-[#60A5FA]/30 sm:border-0 ml-2 sm:ml-0">
+                                                                        <div className="flex flex-col gap-1 py-1">
+                                                                            {intermediates.map((intStop, intIdx) => (
+                                                                                <div key={`int-${currentIdx}-${intIdx}`} className="flex justify-between items-center text-slate-500 py-1.5 pl-3 border-l-2 border-white/10 ml-2 hover:border-[#60A5FA]/40 hover:bg-white/[0.04] rounded-r-md transition-colors cursor-default">
+                                                                                    <div className="flex flex-col">
+                                                                                        <span className="text-xs font-semibold text-slate-400 flex items-center gap-2">
+                                                                                            {intStop.stationName}
+                                                                                            <span className="text-[9px] text-slate-600 font-mono">{intStop.stationCode}</span>
+                                                                                        </span>
+                                                                                        <div className="flex gap-2 items-center mt-0.5">
+                                                                                            <span className="text-[10px] font-medium tracking-wide">{intStop.distanceFromSourceKm} km</span>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <div className="text-[11px] font-medium font-mono text-slate-500 bg-white/5 px-2 py-0.5 rounded">
+                                                                                        {intStop.arrivalTime || '--:--'}
+                                                                                    </div>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </React.Fragment>
+                                                    );
+                                                })}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="py-20 text-center text-slate-500 font-bold uppercase tracking-widest text-xs">No schedule details found for this train.</div>
+                            )}
                         </div>
                     </div>
                 </div>

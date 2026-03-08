@@ -9,33 +9,40 @@ const BERTH_LABEL = {
     WS: "WS", MS: "MS", AS: "AS" // window / middle / aisle (chair car)
 };
 
-function SeatButton({ seat, isSelected, onClick }) {
+function SeatButton({ seat, isSelected, isRecommended, onClick }) {
     return (
         <button
             onClick={onClick}
             disabled={seat.isBooked}
             className={`
-                relative h-12 w-12 md:h-14 md:w-14 rounded-lg flex items-center justify-center text-sm font-bold transition-colors duration-200
+                relative h-12 w-12 md:h-14 md:w-14 rounded-lg flex items-center justify-center text-sm font-bold transition-all duration-300
                 ${seat.isBooked
-                    ? "bg-[#383838] text-gray-500 cursor-not-allowed opacity-50 border border-gray-600"
+                    ? "bg-[#383838] text-gray-500 cursor-not-allowed opacity-50 border border-gray-600 scale-95"
                     : isSelected
-                        ? "text-white border-2 shadow-[0_0_6px_rgba(74,184,109,0.2)]"
-                        : "bg-transparent text-gray-300 hover:shadow-lg"
+                        ? "text-white border-2 shadow-[0_0_15px_rgba(74,184,109,0.4)] scale-105 z-10"
+                        : isRecommended 
+                            ? "bg-[#0f172a] text-[#4ab86d] border-2 border-[#4ab86d]/40 border-dashed hover:border-[#4ab86d] hover:bg-[#4ab86d]/5"
+                            : "bg-transparent text-gray-300 border border-gray-700 hover:border-[#4ab86d] hover:text-[#4ab86d] hover:scale-105 hover:z-10"
                 }
             `}
             style={!seat.isBooked ? (
                 isSelected
                     ? { backgroundColor: '#4ab86d', borderColor: '#3d9960' }
-                    : { borderWidth: '1px', borderStyle: 'solid', borderColor: '#4ab86d' }
+                    : undefined
             ) : undefined}
         >
             <span className="z-10">{seat.seatNumber}</span>
             <span
-                className={`absolute -top-2 -right-2 text-[9px] font-mono px-1 rounded shadow-sm border ${isSelected ? "text-white" : "bg-[#1D2332] border-gray-600 text-gray-400"}`}
+                className={`absolute -top-2 -right-2 text-[8px] font-mono px-1 rounded shadow-sm border z-20 ${isSelected ? "text-white" : "bg-[#1D2332] border-gray-600 text-gray-400"}`}
                 style={isSelected ? { backgroundColor: '#3d9960', borderColor: '#4ab86d' } : undefined}
             >
                 {BERTH_LABEL[seat.berthType] ?? seat.berthType?.substring(0, 2)}
             </span>
+            {isRecommended && !seat.isBooked && !isSelected && (
+                <div className="absolute -bottom-1.5 left-0 w-full flex justify-center z-20">
+                    <span className="bg-[#4ab86d] text-white text-[7px] px-1 rounded-full animate-pulse shadow-lg font-extrabold uppercase tracking-tighter">★ Best</span>
+                </div>
+            )}
         </button>
     );
 }
@@ -184,7 +191,7 @@ export default function SeatLayout() {
 
     // Fetch coach allocation scores (load balancing)
     useEffect(() => {
-        if (!trainNumber || !classType || isTrainSearchMode) return;
+        if (!trainNumber || !classType) return;
         let targetClass = classType;
         const match = classType.match(/\(([^)]+)\)$/);
         if (match) targetClass = match[1];
@@ -318,20 +325,37 @@ export default function SeatLayout() {
         </div>
     );
 
-    // ── Current coach ─────────────────────────────────────────────────────────
+    // Helper to get coaches sorted and filtered by the allocation algorithm
+    const getSortedCoaches = () => {
+        if (!layoutData?.coaches) return [];
+        
+        // If allocation data exists, use it to sort and filter by visibility/stability
+        if (coachAllocation && coachAllocation.length > 0) {
+            return coachAllocation
+                .filter(alloc => alloc.isVisible && alloc.status !== 'FULL')
+                .map(alloc => {
+                    const layoutInfo = layoutData.coaches.find(c => (c.coachId || c.coachNumber) === alloc.coachId);
+                    return { ...layoutInfo, ...alloc };
+                });
+        }
+        
+        // Fallback: original layout order (hidden if not search mode to prevent flickering)
+        return isTrainSearchMode ? layoutData.coaches : [];
+    };
+
+    const sortedCoaches = getSortedCoaches();
     const currentCoach = layoutData?.coaches?.find(c => c.coachId === selectedCoachId);
+    
+    // Seat map logic (stability check for seats within the coach)
     const rows = currentCoach ? groupSeatsByRow(currentCoach.seats, currentCoach.rowStructure) : [];
     const hasSide = rows.some(r => r.sideSeats.length > 0);
 
-    // Helper: get allocation info for a given coachId
-    const getAllocInfo = (coachId) => coachAllocation?.find(c => c.coachId === coachId) || null;
-
-    // Badge config per status
-    const STATUS_BADGE = {
-        RECOMMENDED: { label: '★ Best', bg: '#134e26', color: '#4ab86d', border: '#4ab86d' },
-        AVAILABLE:   { label: 'Open',   bg: '#1D2332', color: '#94a3b8', border: '#334155' },
-        NEARLY_FULL: { label: '⚠ Filling', bg: '#431407', color: '#fb923c', border: '#c2410c' },
-        FULL:        { label: 'Full',   bg: '#2d1414', color: '#ef4444', border: '#7f1d1d' },
+    const isRecommendedSeat = (seatNumber) => {
+        if (!currentCoach || !currentCoach.totalSeats) return false;
+        // Simple heuristic: center 40% of the coach is recommended for stability
+        const center = currentCoach.totalSeats / 2;
+        const range = currentCoach.totalSeats * 0.2; // 20% either side of center
+        return seatNumber >= (center - range) && seatNumber <= (center + range);
     };
 
     return (
@@ -489,27 +513,27 @@ export default function SeatLayout() {
                         <div className="lg:hidden mb-4">
                             <h3 className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-3 ml-1">Select Coach</h3>
                             <div className="flex gap-2 overflow-x-auto pb-2 snap-x snap-mandatory" style={{ scrollbarWidth: 'none' }}>
-                                {layoutData.coaches
-                                    .filter(coach => {
-                                        const alloc = getAllocInfo(coach.coachId);
-                                        // Only show coaches that are visible and NOT full
-                                        return (!alloc || alloc.isVisible) && alloc?.status !== 'FULL';
-                                    })
-                                    .map(coach => {
+                                {sortedCoaches.map((coach, idx) => {
                                         const isActive = selectedCoachId === coach.coachId;
+                                        const isRecommended = idx === 0 && coach.status === 'RECOMMENDED';
                                         return (
                                             <button
                                                 key={coach.coachId}
                                                 onClick={() => setSelectedCoachId(coach.coachId)}
                                                 style={{ backgroundColor: isActive ? '#4ab86d' : '#383838' }}
-                                                className={`flex-shrink-0 snap-center px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 flex items-center gap-2 ${
+                                                className={`flex-shrink-0 snap-center px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 flex flex-col items-center gap-1 min-w-[80px] ${
                                                     isActive ? 'text-white shadow-lg' : 'text-gray-300 hover:text-white'
                                                 }`}
                                             >
-                                                <span className="font-mono">{coach.coachId}</span>
-                                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isActive ? "bg-white/20 text-white" : "bg-white/10 text-gray-400"}`}>
-                                                    {coach.seats?.filter(s => !s.isBooked).length}
-                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-mono">{coach.coachId}</span>
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isActive ? "bg-white/20 text-white" : "bg-white/10 text-gray-400"}`}>
+                                                        {coach.seats?.filter(s => !s.isBooked).length}
+                                                    </span>
+                                                </div>
+                                                {isRecommended && (
+                                                    <span className="text-[9px] text-[#4ab86d] font-bold uppercase tracking-tight">★ Best</span>
+                                                )}
                                             </button>
                                         );
                                     })}
@@ -521,35 +545,35 @@ export default function SeatLayout() {
                             <div className="bg-[#1D2332] rounded-2xl p-4 sticky top-24 border border-white/5 shadow-xl">
                                 <h3 className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-4 ml-2">Select Coach</h3>
                                 <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
-                                    {layoutData.coaches
-                                        .filter(coach => {
-                                            const alloc = getAllocInfo(coach.coachId);
-                                            // Only show coaches that are visible and NOT full
-                                            return (!alloc || alloc.isVisible) && alloc?.status !== 'FULL';
-                                        })
-                                        .map(coach => {
-                                            const isActive = selectedCoachId === coach.coachId;
-                                            return (
-                                                <button
-                                                    key={coach.coachId}
-                                                    onClick={() => setSelectedCoachId(coach.coachId)}
-                                                    style={{
-                                                        backgroundColor: isActive ? '#4ab86d' : '#383838',
-                                                        borderColor: isActive ? '#4ab86d' : '#4b5563'
-                                                    }}
-                                                    className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex justify-between items-center border ${
-                                                        isActive ? 'text-white shadow-md' : 'text-gray-300 hover:text-white'
-                                                    }`}
-                                                >
+                                    {sortedCoaches.map((coach, idx) => {
+                                        const isActive = selectedCoachId === coach.coachId;
+                                        const isRecommended = idx === 0 && coach.status === 'RECOMMENDED';
+                                        return (
+                                            <button
+                                                key={coach.coachId}
+                                                onClick={() => setSelectedCoachId(coach.coachId)}
+                                                style={{
+                                                    backgroundColor: isActive ? '#4ab86d' : '#383838',
+                                                    borderColor: isActive ? '#4ab86d' : '#4b5563'
+                                                }}
+                                                className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex justify-between items-center border ${
+                                                    isActive ? 'text-white shadow-md' : 'text-gray-300 hover:text-white'
+                                                }`}
+                                            >
+                                                <div className="flex flex-col">
                                                     <span className="font-mono font-bold">{coach.coachId}</span>
-                                                    <span className={`text-xs px-2 py-0.5 rounded ${
-                                                        isActive ? 'bg-white/20 text-white' : 'bg-white/10 text-gray-400'
-                                                    }`}>
-                                                        {coach.seats?.filter(s => !s.isBooked).length} free
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
+                                                    {isRecommended && (
+                                                        <span className="text-[10px] text-[#4ab86d] font-bold uppercase tracking-wider">★ Recommended</span>
+                                                    )}
+                                                </div>
+                                                <span className={`text-xs px-2 py-0.5 rounded ${
+                                                    isActive ? 'bg-white/20 text-white' : 'bg-white/10 text-gray-400'
+                                                }`}>
+                                                    {coach.seats?.filter(s => !s.isBooked).length} free
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
@@ -574,17 +598,17 @@ export default function SeatLayout() {
                                                         const seatId = `${selectedCoachId}-${seat.seatNumber}`;
                                                         const isSelected = selectedSeats.some(s => s.uid === seatId);
                                                         return (
-                                                            <SeatButton
-                                                                key={seat.seatNumber}
-                                                                seat={seat}
-                                                                isSelected={isSelected}
-                                                                onClick={() => toggleSeat(seat, selectedCoachId)}
-                                                            />
+                                                                    <SeatButton
+                                                                        key={seat.seatNumber}
+                                                                        seat={seat}
+                                                                        isSelected={isSelected}
+                                                                        isRecommended={isRecommendedSeat(seat.seatNumber)}
+                                                                        onClick={() => toggleSeat(seat, selectedCoachId)}
+                                                                    />
                                                         );
                                                     })}
                                                 </div>
 
-                                                {/* Side berths (after AISLE) */}
                                                 {hasSide && (
                                                     <div className="flex gap-2 md:gap-3 border-l border-dashed border-gray-700/50 pl-4 md:pl-8">
                                                         {row.sideSeats.length > 0 ? (
@@ -596,6 +620,7 @@ export default function SeatLayout() {
                                                                         key={seat.seatNumber}
                                                                         seat={seat}
                                                                         isSelected={isSelected}
+                                                                        isRecommended={isRecommendedSeat(seat.seatNumber)}
                                                                         onClick={() => toggleSeat(seat, selectedCoachId)}
                                                                     />
                                                                 );

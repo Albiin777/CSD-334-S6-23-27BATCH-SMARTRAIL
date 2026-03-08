@@ -9,7 +9,7 @@
 
 const MAX_OCCUPANCY = 0.90;       // Hard cap — stop showing seats above this
 const NEARLY_FULL_THRESHOLD = 0.70; // Coaches above this get NEARLY_FULL status
-const NEXT_STAGE_THRESHOLD = 0.70;  // A stage's avg occupancy must exceed this to unlock next stage
+const NEXT_STAGE_THRESHOLD = 0.50;  // A stage's avg occupancy must exceed this to unlock next stage (relaxed for more choice)
 
 const DISTANCE_WEIGHT = 0.4;
 const OCCUPANCY_WEIGHT = 0.6;
@@ -118,16 +118,20 @@ export function computeCoachAllocations(coaches, confirmedPassengers = [], passe
     const stageGroups = { 1: [], 2: [], 3: [], 4: [] };
     for (const c of enriched) stageGroups[c.stage].push(c);
 
-    const stageUnlocked = { 1: true, 2: false, 3: false, 4: false };
+    // Initial state: always unlock the center 50% (Stages 1 & 2) to provide more choice
+    const stageUnlocked = { 1: true, 2: true, 3: false, 4: false };
 
     for (let stage = 1; stage <= 3; stage++) {
         const group = stageGroups[stage];
         if (group.length === 0) {
-            stageUnlocked[stage + 1] = stageUnlocked[stage];
+            stageUnlocked[stage + 1] = stageUnlocked[stage + 1] || stageUnlocked[stage];
             continue;
         }
         const avgOccupancy = group.reduce((sum, c) => sum + c.occupancy, 0) / group.length;
-        stageUnlocked[stage + 1] = avgOccupancy >= NEXT_STAGE_THRESHOLD;
+        // If current stage is full enough, unlock the next one
+        if (avgOccupancy >= NEXT_STAGE_THRESHOLD) {
+            stageUnlocked[stage + 1] = true;
+        }
     }
 
     // 4. Check if ANY visible coach can fit the entire group.
@@ -144,13 +148,38 @@ export function computeCoachAllocations(coaches, confirmedPassengers = [], passe
         // - Normally: only show unlocked-stage coaches
         // - Fallback: if no full-fit coach exists, also show partial-fit coaches from any stage
         const isFallbackCandidate = !anyFullFitVisible && coach.groupFit === 'PARTIAL_FIT';
-        const isVisible = isUnlocked || isFallbackCandidate;
+        const isVisibleByStage = isUnlocked || isFallbackCandidate;
 
+        return {
+            ...coach,
+            isVisible: isVisibleByStage,
+            isFallback: isFallbackCandidate
+        };
+    });
+
+    // 6. MINIMUM CHOICE RULE:
+    // Ensure at least 3 coaches are visible (if the train has that many) so users have a choice.
+    // If fewer than 3 are visible by stage, we force the top 3 based on coachScore.
+    const visibleCount = result.filter(c => c.isVisible && c.occupancy < MAX_OCCUPANCY).length;
+    if (visibleCount < 3 && result.length > 0) {
+        // Sort enriched by score to find the next best ones to show
+        const byScore = [...result].sort((a, b) => a.coachScore - b.coachScore);
+        let forced = 0;
+        for (const c of byScore) {
+            if (forced >= 3) break;
+            if (c.occupancy < MAX_OCCUPANCY) {
+                c.isVisible = true;
+                forced++;
+            }
+        }
+    }
+
+    // 7. Assign final status and clean up for return
+    const finalResult = result.map(coach => {
         let status;
         if (coach.occupancy >= MAX_OCCUPANCY || coach.freeSeats === 0) {
             status = 'FULL';
         } else if (!anyFullFitVisible && coach.groupFit === 'PARTIAL_FIT') {
-            // Only partial seats available for the group in this coach
             status = 'PARTIAL';
         } else if (coach.occupancy >= NEARLY_FULL_THRESHOLD) {
             status = 'NEARLY_FULL';
@@ -172,35 +201,31 @@ export function computeCoachAllocations(coaches, confirmedPassengers = [], passe
             coachScore: coach.coachScore,
             distanceFromCenter: coach.distanceFromCenter,
             stage: coach.stage,
-            groupFit,   // FULL_FIT | PARTIAL_FIT | NO_FIT
-            isVisible,
-            isFallback: isFallbackCandidate,  // true = this coach only shows because no full-fit exists
-            status,     // RECOMMENDED | AVAILABLE | NEARLY_FULL | PARTIAL | FULL
+            groupFit: coach.groupFit,
+            isVisible: coach.isVisible,
+            isFallback: coach.isFallback,
+            status,
         };
     });
 
-    // 6. Sort:
+    // 8. Sort:
     //    1st: FULL_FIT visible coaches by coachScore ascending
     //    2nd: PARTIAL_FIT fallback coaches by freeSeats descending (most available first)
-    //    Hidden (NO_FIT or locked-stage non-fallback): excluded from visible list
-    result.sort((a, b) => {
+    finalResult.sort((a, b) => {
         if (!a.isVisible && !b.isVisible) return 0;
         if (a.isVisible !== b.isVisible) return a.isVisible ? -1 : 1;
 
-        // Both visible: full-fit before partial
         if (a.groupFit !== b.groupFit) {
             if (a.groupFit === 'FULL_FIT') return -1;
             if (b.groupFit === 'FULL_FIT') return 1;
         }
 
-        // Among PARTIAL_FIT, prefer more free seats
         if (a.groupFit === 'PARTIAL_FIT' && b.groupFit === 'PARTIAL_FIT') {
             return b.freeSeats - a.freeSeats;
         }
 
-        // Among FULL_FIT, lower coachScore is better
         return a.coachScore - b.coachScore;
     });
 
-    return result;
+    return finalResult;
 }
