@@ -273,7 +273,7 @@ const bookTicket = async (trainNumber, source, destination, journeyDate, classCo
                     title: notifTitle,
                     message: notifMessage,
                     "forYou": true,
-                    link: `/pnr-status?pnr=${pnr}`
+                    link: `/?pnr=${pnr}#pnr-section`
                 }
             ]);
         } catch (notifErr) {

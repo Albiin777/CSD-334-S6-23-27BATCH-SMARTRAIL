@@ -184,7 +184,7 @@ export default function MyBookings() {
                                         </div>
                                         
                                         <button 
-                                            onClick={() => navigate(`/pnr-status?pnr=${booking.pnr}`)}
+                                            onClick={() => navigate(`/?pnr=${booking.pnr}#pnr-section`)}
                                             className="w-full sm:w-auto px-6 py-2.5 bg-white text-black hover:bg-gray-200 text-xs font-bold uppercase rounded-lg transition active:scale-95 flex items-center justify-center gap-2"
                                         >
                                             Track PNR

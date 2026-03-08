@@ -143,11 +143,11 @@ export default function TrainSchedule() {
 
     return (
         <div id="schedule-section" className="relative max-w-6xl mx-auto mt-32 mb-28 px-4 scroll-mt-32">
-            <div className="text-center lg:text-left mb-2">
+            <div className="text-left mb-2">
                 <h2 className="text-4xl sm:text-5xl font-black text-white uppercase tracking-tight">
-                    View Train Schedules
+                    Search Train Schedules
                 </h2>
-                <p className="text-base text-slate-400 mt-2 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
+                <p className="text-base text-gray-400 mt-2 max-w-2xl leading-relaxed">
                     View the scheduled arrival and departure times.
                 </p>
             </div>

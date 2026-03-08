@@ -347,7 +347,7 @@ export default function PaymentGateway() {
                         {/* Action buttons */}
                         <div className="mt-8 flex gap-4 justify-center pb-8">
                             <button
-                                onClick={() => navigate("/pnr-status", { state: { pnr: bookingResult?.pnr, justBooked: true } })}
+                                onClick={() => navigate("/#pnr-section", { state: { pnr: bookingResult?.pnr, justBooked: true } })}
                                 className="bg-white font-bold py-3 px-8 rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-1 transition duration-300 w-full"
                                 style={{ color: '#4ab86d' }}
                             >

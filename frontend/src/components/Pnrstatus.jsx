@@ -12,12 +12,16 @@ export default function PNRStatus() {
   const [pnrData, setPnrData] = useState(null);
   const [error, setError] = useState(null);
 
-  // Auto-fill PNR if navigated from payment success
+  // Auto-fill PNR if navigated from payment success or query params
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const queryPnr = params.get("pnr");
     if (location.state?.pnr) {
       setPnr(location.state.pnr);
+    } else if (queryPnr) {
+      setPnr(queryPnr);
     }
-  }, [location.state]);
+  }, [location]);
 
   // 1. ADDED ACCESSIBILITY: Listen for "Enter" key globally
   useEffect(() => {
@@ -77,6 +81,7 @@ export default function PNRStatus() {
   const handleChange = (e) => {
     const value = e.target.value.replace(/\D/g, "");
     if (value.length <= 10) setPnr(value);
+    if (error) setError(null); // Clear error instantly on new input
   };
 
   const inputRef = useRef(null);
@@ -101,11 +106,11 @@ export default function PNRStatus() {
 
         {!showResult ? (
           <>
-            <div className="text-center lg:text-left">
+            <div className="text-left">
               <h2 className="text-4xl sm:text-5xl font-black tracking-tight uppercase">
                 {loading ? "Fetching Details..." : "Check PNR Status"}
               </h2>
-              <p className="text-gray-400 mt-2 max-w-2xl mx-auto lg:mx-0 text-base leading-relaxed">
+              <p className="text-gray-400 mt-2 max-w-2xl text-base leading-relaxed">
                 Your Passenger Name Record (PNR) is a unique 10-digit digital certificate.
                 Enter it below to unlock real-time journey updates and seat confirmation.
               </p>
@@ -123,13 +128,13 @@ export default function PNRStatus() {
                 />
                 <div className="flex justify-between gap-2 lg:gap-4">
                   {[...Array(10)].map((_, i) => (
-                    <div key={i} className={`flex-1 h-16 lg:h-20 border-b-4 flex items-center justify-center text-3xl lg:text-5xl font-black transition-all duration-300 ${i < pnr.length ? "border-white text-white" : "border-white/10 text-white/5"} ${i === pnr.length ? "border-white/50 animate-pulse" : ""}`}>
+                    <div key={i} className={`flex-1 h-16 lg:h-20 border-b-4 flex items-center justify-center text-3xl lg:text-5xl font-black transition-all duration-300 ${error ? "border-red-500 text-red-500" : i < pnr.length ? "border-white text-white" : "border-white/10 text-white/5"} ${i === pnr.length && !error ? "border-white/50 animate-pulse" : ""}`}>
                       {pnr[i] || "0"}
                     </div>
                   ))}
                 </div>
-                <span className="block mt-4 text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] text-center lg:text-left">
-                  Press Enter to search
+                <span className={`block mt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-left transition-colors ${error ? "text-red-500" : "text-gray-500"}`}>
+                  {error ? `ERROR: ${error}` : "Press Enter to search"}
                 </span>
               </div>
 
@@ -142,17 +147,6 @@ export default function PNRStatus() {
               </button>
             </div>
           </>
-        ) : error ? (
-          <div className="text-center py-20 animate-in fade-in zoom-in duration-500">
-            <h2 className="text-3xl font-black text-red-500 mb-4">SEARCH FAILED</h2>
-            <p className="text-gray-400 mb-8 max-w-md mx-auto">{error}</p>
-            <button
-              onClick={resetToForm}
-              className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-full font-bold transition"
-            >
-              TRY AGAIN
-            </button>
-          </div>
         ) : (
           <PNRResult
             pnrData={pnrData}

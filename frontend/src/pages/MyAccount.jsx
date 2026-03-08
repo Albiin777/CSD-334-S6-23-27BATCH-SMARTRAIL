@@ -23,27 +23,54 @@ export default function MyAccount() {
     const timerRef = useRef(null);
 
     useEffect(() => {
+        let mounted = true;
+
+        const loadUserData = (currentUser) => {
+            if (!currentUser || !mounted) return;
+            setUser({
+                id: currentUser.id,
+                email: currentUser.email,
+                phone: currentUser.phone || '',
+                name: currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0],
+                provider: currentUser.app_metadata?.provider || 'mobile' 
+            });
+            setNewEmail(currentUser.email || '');
+            setNewPhone(currentUser.phone || '+91');
+        };
+
         const fetchUser = async () => {
             try {
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user) {
-                    setUser({
-                        id: user.id,
-                        email: user.email,
-                        phone: user.phone || '',
-                        name: user.user_metadata?.full_name || user.email?.split('@')[0],
-                        provider: user.app_metadata?.provider || 'mobile' // Detection for Google/Email
-                    });
-                    setNewEmail(user.email);
-                    setNewPhone(user.phone || '+91');
+                const { data: { session } } = await supabase.auth.getSession();
+                
+                if (session?.user) {
+                    loadUserData(session.user);
+                } else {
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (user) loadUserData(user);
                 }
             } catch (err) {
-                console.error("Error fetching user details", err);
+                console.error("Error fetching user", err);
             } finally {
-                setIsLoading(false);
+                if (mounted) setIsLoading(false);
             }
         };
+
         fetchUser();
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (session?.user) {
+                loadUserData(session.user);
+                if (mounted) setIsLoading(false);
+            } else if (!session && mounted) {
+                setUser(null);
+                setIsLoading(false);
+            }
+        });
+
+        return () => {
+            mounted = false;
+            subscription?.unsubscribe();
+        };
     }, []);
 
     // Timer logic for resend cooldown

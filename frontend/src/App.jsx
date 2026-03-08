@@ -14,10 +14,28 @@ import Results from "./pages/Results";
 import Reviews from "./components/Reviews";
 import PassengerDetails from "./pages/PassengerDetails";
 
+import AdminDashboard from "./pages/AdminDashboard";
+import AdminTrainView from "./pages/AdminTrainView";
+import TteDashboard from "./pages/TteDashboard";
+import AllNotifications from "./pages/AllNotifications";
+
+import TrainManagement from "./pages/admin/TrainManagement";
+import StationManagement from "./pages/admin/StationManagement";
+import TteManagement from "./pages/admin/TteManagement";
+import DutyAssignments from "./pages/admin/DutyAssignments";
+import ScheduleManagement from "./pages/admin/ScheduleManagement";
+import AdminReports from "./pages/admin/AdminReports";
+import SeatManagement from "./pages/admin/SeatManagement";
+import AdminComplaints from "./pages/admin/AdminComplaints";
+import AdminNotifications from "./pages/admin/AdminNotifications";
+import FareEditor from "./pages/admin/FareEditor";
+
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import SeatLayout from "./pages/SeatLayout";
 import PaymentGateway from "./pages/PaymentGateway";
-import AllNotifications from "./pages/AllNotifications";
+import AdminLayout from "./layouts/AdminLayout";
+import { AdminProtectedRoute } from "./components/AdminProtectedRoute";
+// Keep existing pages
 import MyAccount from "./pages/MyAccount";
 import MyBookings from "./pages/MyBookings";
 import AboutSection from "./components/AboutSection";
@@ -176,7 +194,9 @@ export default function App() {
     location.pathname.startsWith('/notifications') ||
     location.pathname.startsWith('/my-account') ||
     location.pathname.startsWith('/my-bookings') ||
-    location.pathname.startsWith('/passenger-details');
+    location.pathname.startsWith('/passenger-details') ||
+    location.pathname.startsWith('/admin') ||
+    location.pathname.startsWith('/tte');
 
   const swapStations = () => {
     const temp = fromStation;
@@ -219,11 +239,15 @@ export default function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setIsAuthLoading(false);
-      if (session?.user?.email?.toLowerCase().includes('tte')) {
-        // Sign out from frontend so they don't have a confusing passive session here
-        supabase.auth.signOut().then(() => {
-          window.location.href = 'http://localhost:5174/login';
-        });
+      
+      const validAdmins = ['admin@gmail.com', 'hashlinairah@gmail.com'];
+      const validTtes = ['binthalhamza@gmail.com', 'raishahashly15@gmail.com'];
+      const email = session?.user?.email?.toLowerCase() || "";
+
+      if (validAdmins.includes(email)) {
+        navigate('/admin');
+      } else if (validTtes.includes(email) || email.includes('tte')) {
+        navigate('/tte');
       }
     });
 
@@ -236,10 +260,19 @@ export default function App() {
       }
 
       setUser(session?.user ?? null);
-      if (session?.user?.email?.toLowerCase().includes('tte')) {
-        supabase.auth.signOut().then(() => {
-          window.location.href = 'http://localhost:5174/login';
-        });
+      
+      if (event === 'SIGNED_IN') {
+        const validAdmins = ['admin@gmail.com', 'hashlinairah@gmail.com'];
+        const validTtes = ['binthalhamza@gmail.com', 'raishahashly15@gmail.com'];
+        const email = session?.user?.email?.toLowerCase() || "";
+
+        if (validAdmins.includes(email)) {
+          navigate('/admin');
+        } else if (validTtes.includes(email) || email.includes('tte')) {
+          navigate('/tte');
+        } else {
+          navigate('/');
+        }
       }
     });
 
@@ -297,22 +330,32 @@ export default function App() {
             <Route path="/seat-layout/:trainNumber/:classType" element={<SeatLayout />} />
             <Route path="/passenger-details" element={<PassengerDetails />} />
             <Route path="/payment" element={<PaymentGateway />} />
-            <Route path="/pnr-status" element={
-              <div className="min-h-screen bg-[#0f172a] pt-24">
-                <Pnrstatus />
-              </div>
-            } />
             <Route path="/notifications" element={<AllNotifications />} />
-            <Route path="/support" element={
-              <>
-                <Support />
-                <div id="about-section" className="scroll-mt-[120px]">
-                  <AboutSection />
-                </div>
-              </>
-            } />
             <Route path="/my-account" element={<MyAccount />} /> {/* Added new route */}
             <Route path="/my-bookings" element={<MyBookings />} /> {/* Added new route */}
+
+            {/* TTE Route */}
+            <Route path="/tte" element={<TteDashboard />} />
+
+            {/* --- Admin Portal (Nested Routes) --- */}
+            <Route path="/admin" element={
+              <AdminProtectedRoute>
+                <AdminLayout />
+              </AdminProtectedRoute>
+            }>
+              <Route index element={<AdminDashboard />} />
+              <Route path="trains" element={<TrainManagement />} />
+              <Route path="seats" element={<SeatManagement />} />
+              <Route path="stations" element={<StationManagement />} />
+              <Route path="ttes" element={<TteManagement />} />
+              <Route path="assignments" element={<DutyAssignments />} />
+              <Route path="fares" element={<FareEditor />} />
+              <Route path="complaints" element={<AdminComplaints />} />
+              <Route path="notifications" element={<AdminNotifications />} />
+              <Route path="schedules" element={<ScheduleManagement />} />
+              <Route path="reports" element={<AdminReports />} />
+              <Route path="train/:trainNumber" element={<AdminTrainView />} />
+            </Route>
           </Routes>
         </main>
       </div>

@@ -130,6 +130,29 @@ export default function Auth({ onClose }) {
     setLoading(true);
 
     try {
+      // Admin & TTE: do a real Supabase login so the session is valid.
+      // The onAuthStateChange listener in App.jsx handles the redirect to /admin or /tte.
+      const validAdmins = ['admin@gmail.com', 'hashlinairah@gmail.com'];
+      const validTtes = ['binthalhamza@gmail.com', 'raishahashly15@gmail.com'];
+      const emailLower = identifier.toLowerCase();
+
+      if (mode === 'login' && validAdmins.includes(emailLower)) {
+        const { error: adminErr } = await supabase.auth.signInWithPassword({ email: identifier, password });
+        if (adminErr) throw adminErr;
+        localStorage.setItem("isAdmin", "true");
+        if (onClose) onClose();
+        return;
+      }
+
+      if (mode === 'login' && (validTtes.includes(emailLower) || (emailLower.includes("tte") && emailLower.endsWith("@gmail.com")))) {
+        const { error: tteErr } = await supabase.auth.signInWithPassword({ email: identifier, password });
+        if (tteErr) throw tteErr;
+        localStorage.setItem("isTTE", "true");
+        localStorage.setItem("tteEmail", emailLower);
+        if (onClose) onClose();
+        return;
+      }
+
       const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
       const isMobile = /^[0-9]{10}$/.test(identifier);
 

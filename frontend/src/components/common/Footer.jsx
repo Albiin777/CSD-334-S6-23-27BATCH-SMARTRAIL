@@ -32,10 +32,10 @@ function Footer() {
 
             <ul className="space-y-3 text-sm text-[#B3B3B3]">
               <li><a href="/" className="hover:text-white transition">Home</a></li>
-              <li><a href="/about" className="hover:text-white transition">About SmartRail</a></li>
-              <li><a href="/pnr-status" className="hover:text-white transition">PNR Status</a></li>
-              <li><a href="/faq" className="hover:text-white transition">FAQ</a></li>
-              <li><a href="/contact" className="hover:text-white transition">Contact Us</a></li>
+              <li><a href="/#about-section" className="hover:text-white transition">About SmartRail</a></li>
+              <li><a href="/#schedule-section" className="hover:text-white transition">Check Schedule</a></li>
+              <li><a href="/#pnr-section" className="hover:text-white transition">PNR Status</a></li>
+              <li><a href="/#support-section" className="hover:text-white transition">Contact Us</a></li>
             </ul>
           </div>
 
@@ -47,8 +47,9 @@ function Footer() {
             <div className="w-10 h-[2px] bg-[#B3B3B3]/60 mt-2 mb-4 mx-auto sm:mx-0"></div>
 
             <ul className="space-y-3 text-sm text-[#B3B3B3]">
-              <li><a href="/signin" className="hover:text-white transition">Sign In</a></li>
+              <li><a href="/my-account" className="hover:text-white transition">My Account</a></li>
               <li><a href="/notifications" className="hover:text-white transition">Notifications</a></li>
+              <li><a href="/my-bookings" className="hover:text-white transition">My Bookings</a></li>
             </ul>
           </div>
 
