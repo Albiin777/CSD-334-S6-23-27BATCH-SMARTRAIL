@@ -1,6 +1,24 @@
 import { FaFacebookF, FaTwitter, FaInstagram } from "react-icons/fa";
+import { useEffect, useState } from "react";
+import { supabase } from "../../supabaseClient";
 
 function Footer() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setIsLoggedIn(!!session?.user);
+    };
+    checkSession();
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(!!session?.user);
+    });
+
+    return () => listener?.subscription?.unsubscribe();
+  }, []);
+
   return (
     <footer className="mt-auto bg-[#2B2B2B] text-[#FFFFFF] px-6 sm:px-8 pt-12 pb-6">
       <div className="max-w-[1200px] mx-auto">
@@ -47,9 +65,19 @@ function Footer() {
             <div className="w-10 h-[2px] bg-[#B3B3B3]/60 mt-2 mb-4 mx-auto sm:mx-0"></div>
 
             <ul className="space-y-3 text-sm text-[#B3B3B3]">
-              <li><a href="/my-account" className="hover:text-white transition">My Account</a></li>
-              <li><a href="/notifications" className="hover:text-white transition">Notifications</a></li>
-              <li><a href="/my-bookings" className="hover:text-white transition">My Bookings</a></li>
+              {isLoggedIn ? (
+                <>
+                  <li><a href="/my-account" className="hover:text-white transition">My Account</a></li>
+                  <li><a href="/notifications" className="hover:text-white transition">Notifications</a></li>
+                  <li><a href="/my-bookings" className="hover:text-white transition">My Bookings</a></li>
+                </>
+              ) : (
+                <>
+                  <li><span className="cursor-default">My Account</span></li>
+                  <li><span className="cursor-default">Notifications</span></li>
+                  <li><span className="cursor-default">My Bookings</span></li>
+                </>
+              )}
             </ul>
           </div>
 
