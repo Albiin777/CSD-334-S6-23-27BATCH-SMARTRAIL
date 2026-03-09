@@ -218,14 +218,14 @@ export default function App() {
     });
   };
 
-  // ✅ Supabase auth state listener
+  // ✅ Firebase auth state listener
   useEffect(() => {
     // Check for explicit logout from another app (like TTE portal)
     const params = new URLSearchParams(window.location.search);
     const isLogout = params.get('logout') === 'true';
 
     if (isLogout) {
-      supabase.auth.signOut().then(() => {
+      auth.signOut().then(() => {
         localStorage.removeItem('authToken');
         localStorage.removeItem('user');
         setUser(null);
@@ -235,51 +235,48 @@ export default function App() {
       return; // Exit early so we don't process further auth steps on this mount
     }
 
-    // Check for existing session (only if NOT explicitly logging out)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+    // Listen for auth changes using Firebase
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setIsAuthLoading(false);
-      
-      const validAdmins = ['admin@gmail.com', 'hashlinairah@gmail.com'];
-      const validTtes = ['binthalhamza@gmail.com', 'raishahashly15@gmail.com'];
-      const email = session?.user?.email?.toLowerCase() || "";
-      const role = session?.user?.user_metadata?.role;
 
-      if (validAdmins.includes(email) || role === 'admin') {
-        navigate('/admin');
-      } else if (validTtes.includes(email) || email.includes('tte') || role === 'tte') {
-        navigate('/tte');
-      }
-    });
+      if (currentUser) {
+        setUser(currentUser);
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // If we are actively in the middle of logging out, don't trigger the login redirect
-      if (event === 'SIGNED_OUT') {
-        setUser(null);
-        return;
-      }
+        // Fetch user document from Supabase to check role (since role isn't natively in Firebase Auth)
+        // Adjust the query based on your actual users table schema
+        let userRole = null;
+        try {
+          const { data: profile } = await supabase
+             .from('users') // Example table name
+             .select('role')
+             .eq('email', currentUser.email)
+             .single();
+          
+          userRole = profile?.role;
+        } catch (error) {
+          console.log("Error fetching user role from Supabase:", error);
+        }
 
-      setUser(session?.user ?? null);
-      
-      if (event === 'SIGNED_IN') {
         const validAdmins = ['admin@gmail.com', 'hashlinairah@gmail.com'];
         const validTtes = ['binthalhamza@gmail.com', 'raishahashly15@gmail.com'];
-        const email = session?.user?.email?.toLowerCase() || "";
-        const role = session?.user?.user_metadata?.role;
-  
-        if (validAdmins.includes(email) || role === 'admin') {
+        const email = currentUser.email?.toLowerCase() || "";
+
+        // If newly signed in within this listener...
+        // Navigate based on roles derived from email or the Supabase fetch
+        if (validAdmins.includes(email) || userRole === 'admin') {
           navigate('/admin');
-        } else if (validTtes.includes(email) || email.includes('tte') || role === 'tte') {
+        } else if (validTtes.includes(email) || email.includes('tte') || userRole === 'tte') {
           navigate('/tte');
-        } else {
-          navigate('/');
+        } else if (location.pathname === '/login' || location.pathname === '/signup') {
+           navigate('/');
         }
+      } else {
+        setUser(null);
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => unsubscribe();
+  }, [navigate, location.pathname]);
 
   // Ensure landing at top (hero) on every page load — do not restore previous scroll.
   useEffect(() => {

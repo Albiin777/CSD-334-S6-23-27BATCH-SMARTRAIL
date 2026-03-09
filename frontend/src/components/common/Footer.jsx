@@ -1,22 +1,18 @@
 import { FaFacebookF, FaTwitter, FaInstagram } from "react-icons/fa";
 import { useEffect, useState } from "react";
-import { supabase } from "../../supabaseClient";
+import { auth } from "../../utils/firebaseClient";
+import { onAuthStateChanged } from "firebase/auth";
 
 function Footer() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setIsLoggedIn(!!session?.user);
-    };
-    checkSession();
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(!!session?.user);
+    // Listen for Firebase auth state changes
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setIsLoggedIn(!!user);
     });
 
-    return () => listener?.subscription?.unsubscribe();
+    return () => unsubscribe();
   }, []);
 
   return (

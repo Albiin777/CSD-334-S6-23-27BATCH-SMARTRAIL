@@ -2,8 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { User } from "lucide-react";
 import LabelNavbar from "../LabelNavbar";
-import Auth from "../Auth";
-import { supabase } from "../../utils/supabaseClient";
+import { auth } from "../../utils/firebaseClient";
+import { signOut } from "firebase/auth";
 
 function Header({ onLoginClick, user: propUser, isAuthLoading }) {
   const [hidden, setHidden] = useState(false);
@@ -15,7 +15,7 @@ function Header({ onLoginClick, user: propUser, isAuthLoading }) {
   // Robustly extract display name
   const getDisplayName = (user) => {
     if (!user) return "";
-    const fullName = user.user_metadata?.full_name || user.email?.split('@')[0];
+    const fullName = user.displayName || user.email?.split('@')[0];
     return fullName?.split(' ')[0] || 'User';
   };
 
@@ -41,10 +41,9 @@ function Header({ onLoginClick, user: propUser, isAuthLoading }) {
   }
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOut(auth);
     localStorage.removeItem('authToken');
     localStorage.removeItem('user');
-    setUser(null);
     setShowDropdown(false);
     window.location.reload();
   };
