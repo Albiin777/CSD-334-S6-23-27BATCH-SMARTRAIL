@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import api from "../api/train.api";
-import { supabase } from "../utils/supabaseClient";
+import { db } from "../utils/firebaseClient";
+import { collection, query, where, getDocs } from "firebase/firestore";
 
 // ── Berth-type display labels & colours ──────────────────────────────────────
 const BERTH_LABEL = {
@@ -118,26 +119,35 @@ export default function AdminTrainView({ tteMode = false, assignedCoaches = [], 
                     setSelectedClass(normalizedCoaches[0].classCode);
                 }
 
-                // 2. Fetch Passenger Information from Supabase
-                // Fetch directly from passenger_details table for this train+date
-                const { data: passengers, error: passErr } = await supabase
-                    .from('passenger_details')
-                    .select('*')
-                    .eq('train_no', trainNumber)
-                    .eq('date', journeyDate);
-
-                if (passErr || !passengers) return;
-
-                // Build Map for fast lookups: SeatNumber (Coach-SeatNum) -> Passenger Info
+                // 2. Fetch Passenger Information from Firestore
+                const pnrSnap = await getDocs(query(collection(db, 'pnr_bookings'), where('trainNumber', '==', String(trainNumber))));
+                
                 const pMap = {};
-                passengers.forEach(p => {
-                    if (p.coach && p.seat_number) {
-                        const seatId = `${p.coach}-${p.seat_number}`;
-                        // Store raw passenger_details row directly for QR code and display
-                        pMap[seatId] = p;
-                    }
-                });
+                pnrSnap.forEach(bookingDoc => {
+                    const booking = bookingDoc.data();
+                    (booking.passengers || []).forEach(p => {
+                        // Extract row number if seatNumber is formatted like "A1-12"
+                        const seatNum = p.seatNumber ? p.seatNumber.split('-').pop() : null;
+                        const coach = p.seatNumber ? p.seatNumber.split('-')[0] : null;
 
+                        if (coach && seatNum) {
+                            const seatId = `${coach}-${seatNum}`;
+                            pMap[seatId] = {
+                                ...p,
+                                pnr_number: booking.pnr,
+                                passenger_name: p.name,
+                                passenger_age: p.age,
+                                passenger_gender: p.gender,
+                                seat_number: seatNum,
+                                coach: coach,
+                                booking_status: p.status,
+                                train_no: trainNumber,
+                                date: journeyDate,
+                                berth_type: p.berthType || p.berth_type
+                            };
+                        }
+                    });
+                });
                 setPassengersMap(pMap);
 
             } catch (err) {

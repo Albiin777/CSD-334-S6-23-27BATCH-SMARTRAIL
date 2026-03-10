@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Ticket, Info, Newspaper, Inbox, Bell, CheckCircle2 } from 'lucide-react';
 import { notificationApi } from '../api/notification.api';
-import { supabase } from '../utils/supabaseClient';
+import { auth } from '../utils/firebaseClient';
+import { onAuthStateChanged } from 'firebase/auth';
 
 export default function AllNotifications() {
     const [notifications, setNotifications] = useState([]);
@@ -13,17 +14,13 @@ export default function AllNotifications() {
 
     const isLoggedIn = !!user;
 
-    // Supabase auth state listener
+    // Firebase auth state listener
     useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setUser(session?.user ?? null);
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
         });
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            setUser(session?.user ?? null);
-        });
-
-        return () => subscription.unsubscribe();
+        return () => unsubscribe();
     }, []);
 
     useEffect(() => {

@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/train.api";
-import { supabase } from "../utils/supabaseClient";
+import { db } from "../utils/firebaseClient";
+import { collection, query, getDocs, limit, orderBy, where } from "firebase/firestore";
 
 function StatCard({ label, value, sub, color = "blue", icon }) {
     const colors = {
@@ -48,28 +49,31 @@ export default function AdminDashboard() {
     useEffect(() => {
         (async () => {
             try {
-                // 1. Trains
+                // 1. Trains (API remains same)
                 const raw = await api.searchTrains("all");
                 const enriched = raw.map(t => {
                     const seed = t.trainNumber.split("").reduce((a, b) => a + b.charCodeAt(0), 0);
                     return { ...t, status: seed % 5 === 0 ? "Delayed" : seed % 7 === 0 ? "Departed" : "Running" };
                 });
                 setTrains(enriched);
-
-                // 2. Complaints
-                const { data: cd } = await supabase.from("complaints").select("*").order("created_at", { ascending: false }).limit(8);
-                if (cd) setComplaints(cd);
-
-                // 3. TTEs
-                const { data: td } = await supabase.from("tte_accounts").select("*").limit(5);
-                if (td) setTtes(td);
-
-                // 4. Active assignments
-                const { data: ad } = await supabase.from("tte_assignments").select("*").eq("status", "active").limit(5);
-                if (ad) setAssignments(ad);
-
-            } catch (e) { console.error(e); }
-            finally { setLoading(false); }
+ 
+                // 2. Complaints (Firestore)
+                const complaintsSnap = await getDocs(query(collection(db, "complaints"), orderBy("created_at", "desc"), limit(8)));
+                setComplaints(complaintsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+ 
+                // 3. TTEs (Firestore)
+                const ttesSnap = await getDocs(query(collection(db, "profiles"), where("role", "==", "tte"), limit(5)));
+                setTtes(ttesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+ 
+                // 4. Active assignments (Firestore)
+                const assignmentsSnap = await getDocs(query(collection(db, "tte_assignments"), where("status", "==", "active"), limit(5)));
+                setAssignments(assignmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+ 
+            } catch (e) {
+                console.error("Dashboard Load Error:", e);
+            } finally {
+                setLoading(false);
+            }
         })();
     }, []);
 

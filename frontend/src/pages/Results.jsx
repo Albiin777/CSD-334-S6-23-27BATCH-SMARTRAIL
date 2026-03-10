@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import api from "../api/train.api";
-import { supabase } from "../utils/supabaseClient";
 
 export default function Results() {
     const [searchParams] = useSearchParams();

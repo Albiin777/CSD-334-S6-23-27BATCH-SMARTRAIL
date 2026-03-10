@@ -1,42 +1,34 @@
-import { supabase } from '../config/supabaseClient.js';
+import { adminDb } from '../config/firebaseAdmin.js';
 
 /**
  * Handles booking of Unreserved / General Sitting (GS/UR) tickets.
- * These tickets do not have an assigned seat or passenger manifest logic,
- * and they automatically age out after 30 days based on the Supabase cron job.
+ * These tickets do not have an assigned seat or passenger manifest logic.
  */
 export async function bookUnreservedTicket(req, res) {
     try {
         const { trainNumber, journeyDate, source, destination, passengerCount, totalFare } = req.body;
 
         if (!trainNumber || !journeyDate || !source || !destination || !passengerCount || !totalFare) {
-            return res.status(400).json({ error: "Missing required booking details (trainNumber, journeyDate, source, destination, passengerCount, totalFare)" });
+            return res.status(400).json({ error: "Missing required booking details" });
         }
 
-        // We can optionally attach it to an auth user if the frontend passes a userId, or let it be anonymous
-        const { data, error } = await supabase
-            .from('unreserved_tickets')
-            .insert([{
-                trainNumber,
-                journeyDate,
-                source,
-                destination,
-                passengerCount: parseInt(passengerCount, 10),
-                totalFare: parseFloat(totalFare),
-                status: 'VALID'
-            }])
-            .select()
-            .single();
+        const ticketData = {
+            trainNumber,
+            journeyDate,
+            source,
+            destination,
+            passengerCount: parseInt(passengerCount, 10),
+            totalFare: parseFloat(totalFare),
+            status: 'VALID',
+            created_at: new Date().toISOString()
+        };
 
-        if (error) {
-            console.error("Booking failed in Supabase:", error);
-            return res.status(400).json({ error: error.message });
-        }
+        const docRef = await adminDb.collection('unreserved_tickets').add(ticketData);
 
         return res.status(201).json({
             success: true,
             message: "Unreserved ticket booked successfully!",
-            ticket: data
+            ticket: { id: docRef.id, ...ticketData }
         });
 
     } catch (err) {
@@ -50,18 +42,15 @@ export async function bookUnreservedTicket(req, res) {
  */
 export async function getUnreservedTickets(req, res) {
     try {
-        const { data, error } = await supabase
-            .from('unreserved_tickets')
-            .select('*')
-            .order('created_at', { ascending: false });
+        const snapshot = await adminDb.collection('unreserved_tickets')
+            .orderBy('created_at', 'desc')
+            .get();
 
-        if (error) {
-            console.error("Fetch failed:", error);
-            return res.status(400).json({ error: error.message });
-        }
+        const tickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        return res.json({ success: true, tickets: data });
+        return res.json({ success: true, tickets });
     } catch (err) {
+        console.error("Fetch unreserved tickets error:", err);
         return res.status(500).json({ error: "Internal Server Error fetching tickets" });
     }
 }

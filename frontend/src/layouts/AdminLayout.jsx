@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { supabase } from "../utils/supabaseClient";
+import { auth } from "../utils/firebaseClient";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 
 import { LayoutDashboard, Train, Armchair, Users, ClipboardList, Banknote, MessageSquare, Bell, LineChart, ShieldCheck, LogOut, Menu, X } from "lucide-react";
 
@@ -37,17 +38,18 @@ export default function AdminLayout() {
     const [adminEmail, setAdminEmail] = useState("Loading...");
 
     useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            if (session?.user?.email) {
-                setAdminEmail(session.user.email);
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            if (user?.email) {
+                setAdminEmail(user.email);
             } else {
                 setAdminEmail("Unknown User");
             }
         });
+        return () => unsubscribe();
     }, []);
 
     const handleLogout = async () => {
-        await supabase.auth.signOut();
+        await signOut(auth);
         localStorage.removeItem("isAdmin");
         navigate("/");
     };

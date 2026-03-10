@@ -138,7 +138,7 @@ export default function Header({ onMenuClick }) {
                                     { icon: MapPin, label: 'Route', value: tteInfo.route },
                                     { icon: Clock, label: 'Shift', value: tteInfo.shift },
                                     { icon: User, label: 'Coach', value: tteInfo.coachLabel },
-                                    { icon: Database, label: 'Data', value: tteInfo.dataSource === 'supabase' ? '✅ Supabase Live' : tteInfo.dataSource === 'error' ? '❌ DB Error' : '⏳ Loading…' },
+                                    { icon: Database, label: 'Data', value: tteInfo.dataSource === 'firebase' ? '✅ Firebase Live' : tteInfo.dataSource === 'error' ? '❌ DB Error' : '⏳ Loading…' },
                                 ].map(item => (
                                     <div key={item.label} className="flex items-center gap-3">
                                         <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">

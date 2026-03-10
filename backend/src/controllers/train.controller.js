@@ -1,8 +1,7 @@
-
 import { dataStore } from '../services/train.service.js';
 import { generateSeats } from '../services/seatLayout.service.js';
 import { computeCoachAllocations } from '../services/coachLoadBalance.service.js';
-import { supabase } from '../config/supabaseClient.js';
+import { adminDb } from '../config/firebaseAdmin.js';
 
 // Classes that are not bookable and should be hidden from seat layout/availability
 const NON_BOOKABLE = new Set(['SLR', 'PANTRY']);
@@ -252,26 +251,23 @@ export async function getAvailability(req, res) {
                 }
             });
 
-        // 1. Fetch Existing Bookings from Supabase if we have specific date parameters
+        // 1. Fetch Existing Bookings from Firestore
         const counts = {}; // { SL: { cnf: 0, rac: 0, wl: 0 }, 3A: ... }
         Object.keys(availabilityMap).forEach(cls => counts[cls] = { cnf: 0, rac: 0, wl: 0 });
 
         if (date && fromIndex !== -1 && toIndex !== -1 && fromIndex < toIndex) {
-            const { data: existingBookings, error } = await supabase
-                .from('pnr_bookings')
-                .select(`
-                    id, fromIndex, toIndex, classCode,
-                    passengers ( status )
-                `)
-                .eq('trainNumber', trainNumber)
-                .eq('journeyDate', date);
+            const bookingsSnapshot = await adminDb.collection('pnr_bookings')
+                .where('trainNumber', '==', String(trainNumber))
+                .where('journeyDate', '==', date)
+                .get();
 
-            if (!error && existingBookings) {
-                existingBookings.forEach(booking => {
+            if (!bookingsSnapshot.empty) {
+                bookingsSnapshot.forEach(doc => {
+                    const booking = doc.data();
                     // Check overlap geometry
                     if (booking.fromIndex < toIndex && booking.toIndex > fromIndex) {
                         const cls = booking.classCode;
-                        if (counts[cls]) {
+                        if (counts[cls] && booking.passengers) {
                             booking.passengers.forEach(p => {
                                 if (p.status === 'CNF') counts[cls].cnf++;
                                 if (p.status === 'RAC') counts[cls].rac++;
@@ -531,34 +527,30 @@ export async function getCoachAllocation(req, res) {
             );
         }
 
-        // 4. Fetch CNF passengers for this train + date whose journey overlaps the requested segment
+        // 4. Fetch passengers from Firestore for this train + date whose journey overlaps the requested segment
         let confirmedPassengers = [];
         if (date) {
-            const { data: bookings, error: bookingErr } = await supabase
-                .from('pnr_bookings')
-                .select(`
-                    id, fromIndex, toIndex, classCode,
-                    passengers ( seatNumber, status )
-                `)
-                .eq('trainNumber', trainNumber)
-                .eq('journeyDate', date)
-                .eq('classCode', classCode);
+            const bookingsSnapshot = await adminDb.collection('pnr_bookings')
+                .where('trainNumber', '==', String(trainNumber))
+                .where('journeyDate', '==', date)
+                .where('classCode', '==', classCode)
+                .get();
 
-            if (bookingErr) console.error('Coach allocation booking fetch error:', bookingErr.message);
-
-            if (bookings) {
-                for (const booking of bookings) {
+            if (!bookingsSnapshot.empty) {
+                bookingsSnapshot.forEach(doc => {
+                    const booking = doc.data();
                     // Only count if journey overlaps the requested segment
                     const overlaps = fromIndex === -1 || toIndex === 999 ||
                         (booking.fromIndex < toIndex && booking.toIndex > fromIndex);
-                    if (!overlaps) continue;
-
-                    for (const p of (booking.passengers || [])) {
-                        if (p.status === 'CNF' && p.seatNumber) {
-                            confirmedPassengers.push(p);
+                    
+                    if (overlaps && booking.passengers) {
+                        for (const p of booking.passengers) {
+                            if (p.status === 'CNF' && p.seatNumber) {
+                                confirmedPassengers.push(p);
+                            }
                         }
                     }
-                }
+                });
             }
         }
 
@@ -581,6 +573,7 @@ export async function getCoachAllocation(req, res) {
         return res.status(500).json({ error: 'Failed to compute coach allocation: ' + err.message });
     }
 }
+
 export async function updateTrainDetails(req, res) {
     try {
         const { trainNumber } = req.params;

@@ -1,7 +1,7 @@
-import { supabase } from '../config/supabaseClient.js';
+import { adminAuth } from '../config/firebaseAdmin.js';
 
 /**
- * Middleware to verify Supabase JWT token and protect routes
+ * Middleware to verify Firebase ID token and protect routes
  */
 export const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
@@ -14,32 +14,25 @@ export const authenticateToken = async (req, res, next) => {
     }
 
     try {
-        const { data: { user }, error } = await supabase.auth.getUser(token);
-
-        if (!error && user) {
-            req.user = user;
-        } else {
-            console.error("[Auth Debug authenticateToken] GET USER ERROR:", error?.message || error);
-            // Decode fallback
-            try {
-                const tokenParts = token.split('.');
-                if (tokenParts.length === 3) {
-                    const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
-                    if (payload.sub) {
-                        req.user = { id: payload.sub, email: payload.email, user_metadata: payload.user_metadata };
-                    }
-                }
-            } catch(e) {}
-            
-            if (!req.user) {
-                return res.status(403).json({
-                    error: 'Invalid or expired token.'
-                });
-            }
-        }
+        // Verify Firebase ID Token
+        const decodedToken = await adminAuth.verifyIdToken(token);
         
-        next();
+        if (decodedToken) {
+            // Map Firebase user fields to match what the app expects
+            req.user = {
+                id: decodedToken.uid,
+                uid: decodedToken.uid,
+                email: decodedToken.email,
+                phone: decodedToken.phone_number
+            };
+            next();
+        } else {
+            return res.status(403).json({
+                error: 'Invalid or expired token.'
+            });
+        }
     } catch (error) {
+        console.error("[Auth Middleware Error]:", error.message);
         return res.status(403).json({
             error: 'Authentication failed.'
         });
@@ -55,31 +48,17 @@ export const optionalAuth = async (req, res, next) => {
 
     if (token) {
         try {
-            const { data: { user }, error } = await supabase.auth.getUser(token);
-            if (!error && user) {
-                req.user = user;
-            } else {
-                console.error("[Auth Debug] GET USER ERROR:", error?.message || error);
-                
-                // FALLBACK: Since getUser fails occasionally with custom roles / mock tokens or delays, 
-                // Let's decode the JWT manually and see if we can extract sub
-                try {
-                    const tokenParts = token.split('.');
-                    if (tokenParts.length === 3) {
-                        const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
-                        console.log("[Auth Debug] DECODED JWT FALLBACK:", !!payload.sub);
-                        if (payload.sub) {
-                            req.user = { id: payload.sub, email: payload.email, user_metadata: payload.user_metadata };
-                        }
-                    }
-                } catch(decodeErr) {
-                    console.error("[Auth Debug] JWT Decode fallback failed:", decodeErr);
-                }
-                
-                if(!req.user) req.user = null;
+            const decodedToken = await adminAuth.verifyIdToken(token);
+            if (decodedToken) {
+                req.user = {
+                    id: decodedToken.uid,
+                    uid: decodedToken.uid,
+                    email: decodedToken.email,
+                    phone: decodedToken.phone_number
+                };
             }
         } catch (error) {
-            console.error("[Auth Debug] TRY/CATCH ERROR:", error);
+            console.error("[Optional Auth Error]:", error.message);
             req.user = null;
         }
     } else {

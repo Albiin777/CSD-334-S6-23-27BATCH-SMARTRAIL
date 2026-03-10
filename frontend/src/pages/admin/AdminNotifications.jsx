@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { supabase } from "../../utils/supabaseClient";
+import { db } from "../../utils/firebaseClient";
+import { collection, query, getDocs, addDoc, deleteDoc, doc, orderBy, limit } from "firebase/firestore";
 
 export default function AdminNotifications() {
     const [notifications, setNotifications] = useState([]);
@@ -12,12 +13,13 @@ export default function AdminNotifications() {
 
     const fetchNotifications = async () => {
         setLoading(true);
-        const { data } = await supabase
-            .from("notifications")
-            .select("*")
-            .order("created_at", { ascending: false })
-            .limit(50);
-        if (data) setNotifications(data);
+        try {
+            const q = query(collection(db, "notifications"), orderBy("created_at", "desc"), limit(50));
+            const snap = await getDocs(q);
+            setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        } catch (err) {
+            console.error("Fetch notifications error:", err);
+        }
         setLoading(false);
     };
 
@@ -26,31 +28,33 @@ export default function AdminNotifications() {
         if (!form.title.trim() || !form.message.trim()) return;
         setSending(true);
 
-        // Supabase `notifications` table only expects `message` and `type`
-        // We will combine Title and Message to preserve context cleanly.
         const fullMessage = `${form.title}: ${form.message}`;
 
-        const { error } = await supabase.from("notifications").insert({
-            message: fullMessage,
-            type: form.type,
-            // target_audience and sent_by don't exist in the current DB schema.
-        });
+        try {
+            await addDoc(collection(db, "notifications"), {
+                message: fullMessage,
+                type: form.type,
+                target: form.target,
+                created_at: new Date().toISOString()
+            });
 
-        if (!error) {
             setSuccess(true);
             setForm({ title: "", message: "", type: "info", target: "all" });
             fetchNotifications();
             setTimeout(() => setSuccess(false), 3000);
-        } else {
+        } catch (error) {
             console.error("Failed to send notification:", error);
-            // Optionally set an error state here
         }
         setSending(false);
     };
 
     const deleteNotification = async (id) => {
-        await supabase.from("notifications").delete().eq("id", id);
-        setNotifications(prev => prev.filter(n => n.id !== id));
+        try {
+            await deleteDoc(doc(db, "notifications", id));
+            setNotifications(prev => prev.filter(n => n.id !== id));
+        } catch (err) {
+            console.error("Delete notification error:", err);
+        }
     };
 
     const TYPE_STYLES = {

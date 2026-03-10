@@ -40,9 +40,9 @@ import MyAccount from "./pages/MyAccount";
 import MyBookings from "./pages/MyBookings";
 import AboutSection from "./components/AboutSection";
 
-import { supabase } from "./utils/supabaseClient";
-import { auth } from "./utils/firebaseClient";
+import { auth, db } from "./utils/firebaseClient";
 import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 /* ==================== Icon Components ==================== */
 function SearchIcon({ size = 20, className = "" }) {
   return (
@@ -245,19 +245,18 @@ export default function App() {
       if (currentUser) {
         setUser(currentUser);
 
-        // Fetch user role from Supabase Profiles (target table switched)
+        // Fetch user role from Firestore
         let role = null;
         try {
-          const { data: profile } = await supabase
-             .from('profiles')
-             .select('role')
-             .eq('id', currentUser.uid)
-             .single();
-          
-          role = profile?.role;
-          setUserRole(role);
+          const profileDoc = await getDoc(doc(db, 'profiles', currentUser.uid));
+          if (profileDoc.exists()) {
+            role = profileDoc.data().role;
+            setUserRole(role);
+          } else {
+            console.log("No profile found for user:", currentUser.uid);
+          }
         } catch (error) {
-          console.log("Error fetching user role from Supabase:", error);
+          console.error("Error fetching user role from Firestore:", error);
         }
 
         const validAdmins = ['admin@gmail.com', 'hashlinairah@gmail.com'];
@@ -265,7 +264,7 @@ export default function App() {
         const email = currentUser.email?.toLowerCase() || "";
 
         // If newly signed in within this listener...
-        // Navigate based on roles derived from email or the Supabase fetch
+        // Navigate based on roles derived from email or the Firestore fetch
         // IMPORTANT: Only redirect away from login/signup if the profile is reasonably complete (has a displayName)
         // Otherwise, let Auth.jsx handle the 'profile' completion step first.
         if ((validAdmins.includes(email) || role === 'admin') && !location.pathname.startsWith('/admin')) {

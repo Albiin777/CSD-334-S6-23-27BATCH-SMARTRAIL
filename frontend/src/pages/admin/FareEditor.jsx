@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import api from "../../api/train.api";
-import { supabase } from "../../utils/supabaseClient";
+import { db } from "../../utils/firebaseClient";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export default function FareEditor() {
     const [searchQ, setSearchQ] = useState("");
@@ -28,12 +29,9 @@ export default function FareEditor() {
         setLoading(true);
         setSuccess(false);
         try {
-            // First check if we have overridden fare in supabase
-            const { data: override } = await supabase
-                .from("fare_overrides")
-                .select("*")
-                .eq("train_no", train.trainNumber)
-                .single();
+            // First check if we have overridden fare in Firestore
+            const overrideDoc = await getDoc(doc(db, "fare_overrides", String(train.trainNumber)));
+            const override = overrideDoc.exists() ? overrideDoc.data() : null;
 
             // Also get the official fares from API
             const apiFares = await api.getFare(train.trainNumber);
@@ -47,7 +45,8 @@ export default function FareEditor() {
                 setFares(baseFares);
                 setEditedFares(baseFares);
             }
-        } catch {
+        } catch (err) {
+            console.error(err);
             // Fallback fares if API fails
             const fallback = { "2S": 85, "CC": 255, "SL": 195, "3A": 485, "2A": 710, "1A": 1175 };
             setFares(fallback);
@@ -59,18 +58,20 @@ export default function FareEditor() {
     const saveFares = async () => {
         if (!selectedTrain) return;
         setSaving(true);
-        // Upsert into fare_overrides table
-        const { error } = await supabase.from("fare_overrides").upsert({
-            train_no: selectedTrain.trainNumber,
-            train_name: selectedTrain.trainName,
-            fares: editedFares,
-            updated_at: new Date().toISOString(),
-            updated_by: "admin",
-        }, { onConflict: "train_no" });
-        if (!error) {
+        try {
+            await setDoc(doc(db, "fare_overrides", String(selectedTrain.trainNumber)), {
+                train_no: selectedTrain.trainNumber,
+                train_name: selectedTrain.trainName,
+                fares: editedFares,
+                updated_at: new Date().toISOString(),
+                updated_by: "admin",
+            }, { merge: true });
+            
             setFares({ ...editedFares });
             setSuccess(true);
             setTimeout(() => setSuccess(false), 3000);
+        } catch (error) {
+            console.error(error);
         }
         setSaving(false);
     };

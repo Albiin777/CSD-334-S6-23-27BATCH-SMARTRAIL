@@ -1,47 +1,59 @@
 import express from 'express';
-import { supabase, supabaseAdmin } from '../config/supabaseClient.js';
+import { adminDb } from '../config/firebaseAdmin.js';
+import { authenticateToken } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
+
+// =====================================================
+// GET /api/complaints
+// Fetch all complaints for the authenticated user
+// =====================================================
+router.get('/', authenticateToken, async (req, res) => {
+    try {
+        const user = req.user;
+
+        const complaintsSnapshot = await adminDb.collection('complaints')
+            .where('user_id', '==', user.id)
+            .orderBy('created_at', 'desc')
+            .get();
+
+        const complaints = complaintsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        res.json(complaints);
+    } catch (error) {
+        console.error('Error fetching complaints:', error);
+        res.status(500).json({ error: 'Failed to fetch complaints' });
+    }
+});
 
 // =====================================================
 // POST /api/complaints
 // Create a new complaint
 // =====================================================
-router.post('/', async (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
     try {
         const { subject, description, images, train_number, train_name } = req.body;
-        const authHeader = req.headers.authorization;
+        const user = req.user;
 
-        if (!authHeader) {
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
+        const complaintData = {
+            user_id: user.id,
+            subject,
+            description,
+            images: images || [],
+            status: 'open',
+            train_number: train_number || '',
+            train_name: train_name || '',
+            created_at: new Date().toISOString()
+        };
 
-        const token = authHeader.replace('Bearer ', '');
-        const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-
-        if (userError || !user) {
-            return res.status(401).json({ error: 'Invalid token' });
-        }
-
-        const { data, error } = await supabaseAdmin
-            .from('complaints')
-            .insert({
-                user_id: user.id,
-                subject,
-                description,
-                images: images || [],
-                status: 'open',
-                train_number,
-                train_name
-            })
-            .select()
-            .single();
-
-        if (error) {
-            throw error;
-        }
-
-        res.status(201).json({ complaint: data });
+        const docRef = await adminDb.collection('complaints').add(complaintData);
+        
+        res.status(201).json({ 
+            complaint: { id: docRef.id, ...complaintData } 
+        });
     } catch (error) {
         console.error('Error creating complaint:', error);
         res.status(500).json({ error: 'Failed to create complaint' });
@@ -52,60 +64,36 @@ router.post('/', async (req, res) => {
 // GET /api/complaints/:complaintId/replies
 // Fetch all replies for a specific complaint
 // =====================================================
-router.get('/:complaintId/replies', async (req, res) => {
+router.get('/:complaintId/replies', authenticateToken, async (req, res) => {
     try {
         const { complaintId } = req.params;
-        const authHeader = req.headers.authorization;
+        const user = req.user;
 
         console.log('📥 Fetching replies for complaint:', complaintId);
 
-        if (!authHeader) {
-            console.log('❌ No auth header provided');
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
+        // Verify user owns this complaint
+        const complaintDoc = await adminDb.collection('complaints').doc(complaintId).get();
 
-        const token = authHeader.replace('Bearer ', '');
-
-        // Verify user
-        const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-
-        if (userError || !user) {
-            console.log('❌ Invalid token or user error:', userError);
-            return res.status(401).json({ error: 'Invalid token' });
-        }
-
-        console.log('✅ User authenticated:', user.id);
-
-        // Verify user owns this complaint (using admin client to bypass RLS)
-        const { data: complaint, error: complaintError } = await supabaseAdmin
-            .from('complaints')
-            .select('id, user_id')
-            .eq('id', complaintId)
-            .eq('user_id', user.id)
-            .single();
-
-        if (complaintError || !complaint) {
-            console.log('❌ Complaint query error:', complaintError);
-            console.log('   Looking for complaint:', complaintId, 'for user:', user.id);
+        if (!complaintDoc.exists || complaintDoc.data().user_id !== user.id) {
+            console.log('❌ Complaint not found or access denied');
             return res.status(404).json({ error: 'Complaint not found or access denied' });
         }
 
-        console.log('✅ Complaint found:', complaint.id);
+        console.log('✅ Complaint found:', complaintId);
 
-        // Fetch all replies for this complaint (using admin client)
-        const { data: replies, error: repliesError } = await supabaseAdmin
-            .from('complaint_replies')
-            .select('*')
-            .eq('complaint_id', complaintId)
-            .order('created_at', { ascending: true });
+        // Fetch all replies for this complaint
+        const repliesSnapshot = await adminDb.collection('complaint_replies')
+            .where('complaint_id', '==', complaintId)
+            .orderBy('created_at', 'asc')
+            .get();
 
-        if (repliesError) {
-            console.log('❌ Replies fetch error:', repliesError);
-            return res.status(500).json({ error: 'Failed to fetch replies' });
-        }
+        const replies = repliesSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
 
-        console.log('✅ Fetched', replies?.length || 0, 'replies');
-        res.json({ replies: replies || [] });
+        console.log('✅ Fetched', replies.length, 'replies');
+        res.json({ replies });
 
     } catch (error) {
         console.error('💥 Error fetching replies:', error);
@@ -117,113 +105,105 @@ router.get('/:complaintId/replies', async (req, res) => {
 // POST /api/complaints/:complaintId/replies
 // Add a new reply to a complaint
 // =====================================================
-router.post('/:complaintId/replies', async (req, res) => {
+router.post('/:complaintId/replies', authenticateToken, async (req, res) => {
     try {
         const { complaintId } = req.params;
         const { message, marks_resolved } = req.body;
-        const authHeader = req.headers.authorization;
+        const user = req.user;
 
         console.log('📝 Creating reply for complaint:', complaintId, '| marks_resolved:', marks_resolved);
-
-        if (!authHeader) {
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
 
         if (!message || message.trim().length === 0) {
             return res.status(400).json({ error: 'Message is required' });
         }
 
-        const token = authHeader.replace('Bearer ', '');
-
-        // Verify user
-        const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-
-        if (userError || !user) {
-            console.log('❌ Auth error:', userError);
-            return res.status(401).json({ error: 'Invalid token' });
-        }
-
-        console.log('✅ User authenticated:', user.id);
-
         // Verify user owns this complaint
-        const { data: complaint, error: complaintError } = await supabaseAdmin
-            .from('complaints')
-            .select('id, user_id, status')
-            .eq('id', complaintId)
-            .eq('user_id', user.id)
-            .single();
+        const complaintRef = adminDb.collection('complaints').doc(complaintId);
+        const complaintDoc = await complaintRef.get();
 
-        if (complaintError || !complaint) {
-            console.log('❌ Complaint error:', complaintError);
+        if (!complaintDoc.exists || complaintDoc.data().user_id !== user.id) {
+            console.log('❌ Complaint not found or access denied');
             return res.status(404).json({ error: 'Complaint not found or access denied' });
         }
 
-        console.log('✅ Complaint found, status:', complaint.status);
+        const complaintData = complaintDoc.data();
+        console.log('✅ Complaint found, status:', complaintData.status);
 
-        if (complaint.status === 'closed') {
+        if (complaintData.status === 'closed') {
             return res.status(400).json({ error: 'Cannot reply to closed complaints' });
         }
 
-        // Build the insert object — ALWAYS insert with marks_resolved: false
-        // to avoid triggering the broken DB trigger (which references a non-existent
-        // updated_at column on complaints). We update marks_resolved separately after.
         const replyData = {
             complaint_id: complaintId,
             user_id: user.id,
             message: message.trim(),
             is_admin_reply: false,
-            marks_resolved: false
+            marks_resolved: !!marks_resolved,
+            created_at: new Date().toISOString()
         };
 
         console.log('📤 Inserting reply...');
 
         // Insert the reply
-        const { data: newReply, error: insertError } = await supabaseAdmin
-            .from('complaint_replies')
-            .insert(replyData)
-            .select()
-            .single();
+        const replyRef = await adminDb.collection('complaint_replies').add(replyData);
+        
+        console.log('✅ Reply created:', replyRef.id);
 
-        if (insertError) {
-            console.error('❌ Insert error:', insertError.message, '| Code:', insertError.code);
-            return res.status(500).json({
-                error: 'Failed to create reply',
-                details: insertError.message
-            });
-        }
-
-        console.log('✅ Reply created:', newReply.id);
-
-        // If marks_resolved was intended, update the reply and complaint status separately
-        // (UPDATE doesn't trigger the AFTER INSERT trigger, so this is safe)
+        // If marks_resolved was intended, update the complaint status
         if (marks_resolved) {
-            // Update the reply to mark it as resolved
-            await supabaseAdmin
-                .from('complaint_replies')
-                .update({ marks_resolved: true })
-                .eq('id', newReply.id);
-
-            // Update the complaint status to 'resolved'
-            const { error: statusError } = await supabaseAdmin
-                .from('complaints')
-                .update({ status: 'resolved' })
-                .eq('id', complaintId);
-
-            if (statusError) {
-                console.error('⚠️ Status update error:', statusError.message);
-            } else {
-                console.log('✅ Complaint', complaintId, 'marked as resolved');
-            }
-
-            // Return the reply with the correct marks_resolved value
-            newReply.marks_resolved = true;
+            await complaintRef.update({ 
+                status: 'resolved',
+                updated_at: new Date().toISOString()
+            });
+            console.log('✅ Complaint', complaintId, 'marked as resolved');
         }
 
-        res.status(201).json({ reply: newReply });
+        res.status(201).json({ 
+            reply: { id: replyRef.id, ...replyData } 
+        });
 
     } catch (error) {
         console.error('💥 Error creating reply:', error);
         res.status(500).json({ error: 'Internal server error', details: error.message });
+    }
+});
+
+// =====================================================
+// DELETE /api/complaints/:complaintId
+// Delete a complaint and its replies
+// =====================================================
+router.delete('/:complaintId', authenticateToken, async (req, res) => {
+    try {
+        const { complaintId } = req.params;
+        const user = req.user;
+
+        // Verify user owns this complaint
+        const complaintRef = adminDb.collection('complaints').doc(complaintId);
+        const complaintDoc = await complaintRef.get();
+
+        if (!complaintDoc.exists || complaintDoc.data().user_id !== user.id) {
+            return res.status(404).json({ error: 'Complaint not found or access denied' });
+        }
+
+        // Delete all replies first
+        const repliesSnapshot = await adminDb.collection('complaint_replies')
+            .where('complaint_id', '==', complaintId)
+            .get();
+        
+        const batch = adminDb.batch();
+        repliesSnapshot.docs.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+        
+        // Delete the complaint
+        batch.delete(complaintRef);
+        
+        await batch.commit();
+
+        res.json({ message: 'Complaint deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting complaint:', error);
+        res.status(500).json({ error: 'Failed to delete complaint' });
     }
 });
 

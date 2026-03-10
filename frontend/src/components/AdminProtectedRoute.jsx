@@ -1,39 +1,36 @@
 import { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
-import { supabase } from '../utils/supabaseClient';
+import { auth, db } from '../utils/firebaseClient';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
 export const AdminProtectedRoute = ({ children }) => {
     const [user, setUser] = useState(null);
+    const [userRole, setUserRole] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const checkRole = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            const currentUser = session?.user;
+        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             setUser(currentUser);
-
+            
             if (currentUser) {
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('role')
-                    .eq('id', currentUser.id)
-                    .single();
-                setUserRole(profile?.role || 'user');
+                try {
+                    const profileDoc = await getDoc(doc(db, 'profiles', currentUser.uid));
+                    if (profileDoc.exists()) {
+                        setUserRole(profileDoc.data().role || 'user');
+                    }
+                } catch (error) {
+                    console.error("Error fetching admin role:", error);
+                    setUserRole('user');
+                }
+            } else {
+                setUserRole(null);
             }
             setIsLoading(false);
-        };
-
-        checkRole();
-
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            setUser(session?.user ?? null);
-            // In a real app, we might want to re-fetch the role here too
         });
 
-        return () => subscription.unsubscribe();
+        return () => unsubscribe();
     }, []);
-
-    const [userRole, setUserRole] = useState(null);
 
     if (isLoading) {
         return <div className="min-h-screen pt-20 flex items-center justify-center bg-[#0f172a] text-white">Loading...</div>;

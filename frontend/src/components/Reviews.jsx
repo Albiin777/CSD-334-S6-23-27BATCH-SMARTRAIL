@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Star, Search, ThumbsUp, CheckCircle2, Plus, X, ThumbsDown, Pencil, Image as ImageIcon, ChevronLeft, ChevronRight, Inbox } from "lucide-react";
-import { supabase } from "../utils/supabaseClient";
+import { auth } from "../utils/firebaseClient";
+import { onAuthStateChanged } from "firebase/auth";
 import api from "../api/train.api";
 
 export default function Reviews() {
@@ -23,17 +24,11 @@ export default function Reviews() {
     const toggleCard = (id) => setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
 
     useEffect(() => {
-        const getUser = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            setUser(user);
-        };
-        getUser();
-
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            setUser(session?.user ?? null);
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
         });
 
-        return () => subscription.unsubscribe();
+        return () => unsubscribe();
     }, []);
 
     useEffect(() => {

@@ -1,29 +1,19 @@
-import { supabase, supabaseAdmin } from '../config/supabaseClient.js';
-
-// Use admin client to bypass RLS in the server environment if available
-const db = supabaseAdmin || supabase;
+import { adminDb } from '../config/firebaseAdmin.js';
 
 export async function getReviews(req, res) {
     try {
         const { trainNumber } = req.params;
 
-        // Fetch reviews from Supabase
-        const { data, error } = await db
-            .from('reviews')
-            .select(`
-                id,
-                rating,
-                comment,
-                created_at,
-                userId
-            `)
-            .eq('trainNumber', trainNumber)
-            .order('created_at', { ascending: false });
+        // Fetch reviews from Firestore
+        const reviewsSnapshot = await adminDb.collection('reviews')
+            .where('trainNumber', '==', trainNumber)
+            .orderBy('created_at', 'desc')
+            .get();
 
-        if (error) {
-            console.error("Supabase fetch reviews error:", error);
-            return res.status(400).json({ error: error.message });
-        }
+        const data = reviewsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
 
         // Calculate Average
         let averageRating = 0;
@@ -53,23 +43,18 @@ export async function addReview(req, res) {
             return res.status(400).json({ error: "User ID is required to post a review" });
         }
 
-        const { data, error } = await db
-            .from('reviews')
-            .insert([{
-                trainNumber,
-                userId,
-                rating,
-                comment
-            }])
-            .select()
-            .single();
+        const newReview = {
+            trainNumber,
+            userId,
+            rating,
+            comment,
+            created_at: new Date().toISOString()
+        };
 
-        if (error) {
-            console.error("Supabase add review error:", error);
-            return res.status(400).json({ error: error.message });
-        }
+        const docRef = await adminDb.collection('reviews').add(newReview);
+        const savedReview = { id: docRef.id, ...newReview };
 
-        res.status(201).json({ success: true, review: data });
+        res.status(201).json({ success: true, review: savedReview });
     } catch (err) {
         console.error("Add review error:", err);
         res.status(500).json({ error: "Failed to submit review" });

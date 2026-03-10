@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../utils/supabaseClient';
 import { auth } from '../utils/firebaseClient';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Train, Calendar, MapPin, Search, ArrowRight, Loader2, Ticket, ShieldCheck, Home } from 'lucide-react';

@@ -243,24 +243,7 @@ export default function IssueTicket() {
                             </div>
                         </div>
 
-                        {/* ID Proof */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                            <div>
-                                <label className="text-[#B3B3B3] text-xs font-semibold uppercase tracking-wider mb-1.5 block">ID Type *</label>
-                                <div className="relative">
-                                    <select value={form.idType} onChange={e => set('idType', e.target.value)}
-                                        className="w-full bg-[#2B2B2B] border border-[#444] text-white rounded-xl px-3 py-2.5 text-sm appearance-none pr-8">
-                                        {ID_TYPES.map(t => <option key={t}>{t}</option>)}
-                                    </select>
-                                    <ChevronDown size={14} className="absolute right-3 top-3.5 text-[#B3B3B3] pointer-events-none" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="text-[#B3B3B3] text-xs font-semibold uppercase tracking-wider mb-1.5 block">ID Number *</label>
-                                <input value={form.idNumber} onChange={e => set('idNumber', e.target.value)} placeholder="Enter ID number"
-                                    className="w-full bg-[#2B2B2B] border border-[#444] text-white rounded-xl px-3 py-2.5 text-sm placeholder-[#666] focus:outline-none focus:border-purple-500" />
-                            </div>
-                        </div>
+
                     </div>
 
                     <button

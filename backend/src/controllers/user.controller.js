@@ -1,24 +1,23 @@
-import { supabase, supabaseAdmin } from '../config/supabaseClient.js';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
-import { adminAuth } from '../config/firebaseAdmin.js';
+import { adminAuth, adminDb } from '../config/firebaseAdmin.js';
 
 dotenv.config();
 
 /**
- * Generate JWT token
+ * Generate JWT token (Backend session - optional if using Firebase ID tokens everywhere)
  */
 const generateToken = (userId, email) => {
     return jwt.sign(
         { userId, email },
-        process.env.JWT_SECRET,
+        process.env.JWT_SECRET || 'fallback_secret',
         { expiresIn: '7d' }
     );
 };
 
 /**
- * Sign up with email and send OTP
+ * Sign up with email and password (Firebase Migration)
  */
 export const signupWithEmail = async (req, res) => {
     try {
@@ -28,291 +27,62 @@ export const signupWithEmail = async (req, res) => {
             return res.status(400).json({ error: 'Email and password are required' });
         }
 
-        // Sign up user with Supabase Auth
-        const { data, error } = await supabase.auth.signUp({
+        const userRecord = await adminAuth.createUser({
             email,
             password,
-            options: {
-                data: {
-                    full_name: fullName || '',
-                },
-                emailRedirectTo: `${process.env.FRONTEND_URL}/auth/callback`
-            }
+            displayName: fullName || ''
         });
 
-        if (error) {
-            return res.status(400).json({ error: error.message });
-        }
-
         res.status(200).json({
-            message: 'Signup successful! Please check your email for verification.',
+            message: 'Signup successful!',
             user: {
-                id: data.user?.id,
-                email: data.user?.email
+                id: userRecord.uid,
+                email: userRecord.email
             }
         });
     } catch (error) {
         console.error('Signup error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(400).json({ error: error.message });
     }
 };
 
 /**
- * Verify email OTP
- */
-export const verifyEmailOTP = async (req, res) => {
-    try {
-        const { email, token } = req.body;
-
-        if (!email || !token) {
-            return res.status(400).json({ error: 'Email and OTP token are required' });
-        }
-
-        const { data, error } = await supabase.auth.verifyOtp({
-            email,
-            token,
-            type: 'email'
-        });
-
-        if (error) {
-            return res.status(400).json({ error: error.message });
-        }
-
-        // Generate our own JWT for session management
-        const jwtToken = generateToken(data.user.id, data.user.email);
-
-        res.status(200).json({
-            message: 'Email verified successfully',
-            token: jwtToken,
-            user: {
-                id: data.user.id,
-                email: data.user.email,
-                fullName: data.user.user_metadata?.full_name
-            }
-        });
-    } catch (error) {
-        console.error('Verify OTP error:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-};
-
-/**
- * Sign up with phone and send OTP
- */
-export const signupWithPhone = async (req, res) => {
-    try {
-        const { phone, password, fullName } = req.body;
-
-        if (!phone || !password) {
-            return res.status(400).json({ error: 'Phone and password are required' });
-        }
-
-        const { data, error } = await supabase.auth.signUp({
-            phone,
-            password,
-            options: {
-                data: {
-                    full_name: fullName || '',
-                }
-            }
-        });
-
-        if (error) {
-            return res.status(400).json({ error: error.message });
-        }
-
-        res.status(200).json({
-            message: 'Signup successful! Please check your phone for OTP.',
-            user: {
-                id: data.user?.id,
-                phone: data.user?.phone
-            }
-        });
-    } catch (error) {
-        console.error('Phone signup error:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-};
-
-/**
- * Verify phone OTP
- */
-export const verifyPhoneOTP = async (req, res) => {
-    try {
-        const { phone, token } = req.body;
-
-        if (!phone || !token) {
-            return res.status(400).json({ error: 'Phone and OTP token are required' });
-        }
-
-        const { data, error } = await supabase.auth.verifyOtp({
-            phone,
-            token,
-            type: 'sms'
-        });
-
-        if (error) {
-            return res.status(400).json({ error: error.message });
-        }
-
-        const jwtToken = generateToken(data.user.id, data.user.phone);
-
-        res.status(200).json({
-            message: 'Phone verified successfully',
-            token: jwtToken,
-            user: {
-                id: data.user.id,
-                phone: data.user.phone,
-                fullName: data.user.user_metadata?.full_name
-            }
-        });
-    } catch (error) {
-        console.error('Verify phone OTP error:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-};
-
-/**
- * Login with email and password
+ * Login with email and password (Firebase Admin - usually done client side, but we provide it for API)
+ * Note: Firebase Admin SDK doesn't support "login" directly. 
+ * Usually, the client handles login and sends an ID token.
  */
 export const loginWithEmail = async (req, res) => {
-    try {
-        const { email, password } = req.body;
-
-        if (!email || !password) {
-            return res.status(400).json({ error: 'Email and password are required' });
-        }
-
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email,
-            password
-        });
-
-        if (error) {
-            return res.status(401).json({ error: 'Invalid credentials' });
-        }
-
-        const jwtToken = generateToken(data.user.id, data.user.email);
-
-        res.status(200).json({
-            message: 'Login successful',
-            token: jwtToken,
-            user: {
-                id: data.user.id,
-                email: data.user.email,
-                fullName: data.user.user_metadata?.full_name
-            }
-        });
-    } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
+    // For a full migration, we suggest doing login on the client side using Firebase Client SDK.
+    // If the backend MUST handle it, we'd need to use the Firebase REST API or similar.
+    // For now, we point the user to the Custom Email OTP flow which is already migrated.
+    res.status(400).json({ error: 'Please use the custom-email-otp flow or client-side Firebase login.' });
 };
 
 /**
- * Login with phone (sends OTP)
- */
-export const loginWithPhone = async (req, res) => {
-    try {
-        const { phone } = req.body;
-
-        if (!phone) {
-            return res.status(400).json({ error: 'Phone number is required' });
-        }
-
-        const { data, error } = await supabase.auth.signInWithOtp({
-            phone
-        });
-
-        if (error) {
-            return res.status(400).json({ error: error.message });
-        }
-
-        res.status(200).json({
-            message: 'OTP sent to your phone',
-            phone
-        });
-    } catch (error) {
-        console.error('Phone login error:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-};
-
-/**
- * Resend OTP
- */
-export const resendOTP = async (req, res) => {
-    try {
-        const { email, phone, type } = req.body;
-
-        if (!type || (type === 'email' && !email) || (type === 'sms' && !phone)) {
-            return res.status(400).json({ error: 'Invalid request parameters' });
-        }
-
-        const { error } = await supabase.auth.resend({
-            type: type === 'email' ? 'signup' : 'sms',
-            email: type === 'email' ? email : undefined,
-            phone: type === 'sms' ? phone : undefined
-        });
-
-        if (error) {
-            return res.status(400).json({ error: error.message });
-        }
-
-        res.status(200).json({
-            message: `OTP resent successfully to your ${type === 'email' ? 'email' : 'phone'}`
-        });
-    } catch (error) {
-        console.error('Resend OTP error:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-};
-
-/**
- * Logout user
- */
-export const logout = async (req, res) => {
-    try {
-        const { error } = await supabase.auth.signOut();
-
-        if (error) {
-            return res.status(400).json({ error: error.message });
-        }
-
-        res.status(200).json({
-            message: 'Logout successful'
-        });
-    } catch (error) {
-        console.error('Logout error:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-};
-
-/**
- * Get current user profile
+ * Get current user profile (Firebase Admin fetch)
  */
 export const getProfile = async (req, res) => {
     try {
-        const userId = req.user.userId;
-
-        const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
-
-        if (error) {
-            return res.status(404).json({ error: 'User not found' });
-        }
+        const userId = req.user.id; // From authenticateToken middleware
+        const user = await adminAuth.getUser(userId);
+        
+        // Also fetch from 'profiles' collection if synchronized
+        const profileDoc = await adminDb.collection('profiles').doc(userId).get();
+        const profileData = profileDoc.exists ? profileDoc.data() : {};
 
         res.status(200).json({
             user: {
-                id: data.user.id,
-                email: data.user.email,
-                phone: data.user.phone,
-                fullName: data.user.user_metadata?.full_name,
-                createdAt: data.user.created_at
+                id: user.uid,
+                email: user.email,
+                phone: user.phoneNumber,
+                fullName: user.displayName || profileData.full_name,
+                createdAt: user.metadata.creationTime,
+                ...profileData
             }
         });
     } catch (error) {
         console.error('Get profile error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: 'Failed to fetch profile' });
     }
 };
 
@@ -332,15 +102,13 @@ export const sendCustomEmailOTP = async (req, res) => {
         // Expiration time (10 minutes from now)
         const expiresAt = new Date(Date.now() + 10 * 60000).toISOString();
 
-        // Save to Supabase (upsert based on email)
-        const { error: dbError } = await supabaseAdmin
-            .from('email_otps')
-            .upsert({ email: email.toLowerCase(), otp_code: otpCode, expires_at: expiresAt }, { onConflict: 'email' });
-
-        if (dbError) {
-            console.error('Database Error:', dbError);
-            return res.status(500).json({ error: 'Failed to generate OTP' });
-        }
+        // Save to Firestore (upsert based on email)
+        const emailLower = email.toLowerCase();
+        await adminDb.collection('email_otps').doc(emailLower).set({
+            email: emailLower,
+            otp_code: otpCode,
+            expires_at: expiresAt
+        });
 
         // Setup Nodemailer
         const transporter = nodemailer.createTransport({
@@ -386,16 +154,13 @@ export const verifyCustomEmailOTP = async (req, res) => {
 
         const emailLower = email.toLowerCase();
 
-        // 1. Check OTP in Database
-        const { data, error: dbError } = await supabaseAdmin
-            .from('email_otps')
-            .select('*')
-            .eq('email', emailLower)
-            .single();
+        // 1. Check OTP in Firestore
+        const otpDoc = await adminDb.collection('email_otps').doc(emailLower).get();
 
-        if (dbError || !data) {
+        if (!otpDoc.exists) {
             return res.status(400).json({ error: 'Invalid or expired OTP' });
         }
+        const data = otpDoc.data();
 
         // 2. Validate Code & Expiration
         if (data.otp_code !== token) {
@@ -407,7 +172,7 @@ export const verifyCustomEmailOTP = async (req, res) => {
         }
 
         // 3. Clear the used OTP
-        await supabaseAdmin.from('email_otps').delete().eq('email', emailLower);
+        await adminDb.collection('email_otps').doc(emailLower).delete();
 
         // 4. Ensure Firebase User Exists (Create if not)
         let firebaseUid;
@@ -416,7 +181,6 @@ export const verifyCustomEmailOTP = async (req, res) => {
             firebaseUid = userRecord.uid;
         } catch (error) {
             if (error.code === 'auth/user-not-found') {
-                // Create user
                 const newUser = await adminAuth.createUser({
                     email: emailLower,
                     emailVerified: true
@@ -430,13 +194,13 @@ export const verifyCustomEmailOTP = async (req, res) => {
         // 5. Mint Custom Firebase Token
         const customToken = await adminAuth.createCustomToken(firebaseUid);
 
-        // 6. Generate Backend JWT
+        // 6. Generate Backend JWT (Optional)
         const jwtToken = generateToken(firebaseUid, emailLower);
 
         res.status(200).json({
             message: 'Email verified successfully',
-            customToken: customToken, // This is explicitly sent to login to Firebase Client SDK
-            token: jwtToken, // Backend session
+            customToken: customToken,
+            token: jwtToken,
             user: {
                 id: firebaseUid,
                 email: emailLower
@@ -450,92 +214,17 @@ export const verifyCustomEmailOTP = async (req, res) => {
 };
 
 /**
- * Custom Email OTP - Verify Update OTP & Force Update Firebase + Supabase
- */
-export const verifyCustomEmailUpdateOTP = async (req, res) => {
-    try {
-        const { email, token, uid } = req.body;
-        if (!email || !token || !uid) {
-            return res.status(400).json({ error: 'Email, OTP token, and User ID are required' });
-        }
-
-        const emailLower = email.toLowerCase();
-
-        // 1. Check OTP in Database
-        const { data, error: dbError } = await supabaseAdmin
-            .from('email_otps')
-            .select('*')
-            .eq('email', emailLower)
-            .single();
-
-        if (dbError || !data) {
-            return res.status(400).json({ error: 'Invalid or expired OTP' });
-        }
-
-        // 2. Validate Code & Expiration
-        if (data.otp_code !== token) {
-            return res.status(400).json({ error: 'Incorrect OTP code' });
-        }
-
-        if (new Date(data.expires_at) < new Date()) {
-            return res.status(400).json({ error: 'OTP has expired' });
-        }
-
-        // 3. Clear the used OTP
-        await supabaseAdmin.from('email_otps').delete().eq('email', emailLower);
-
-        // 4. Force Update Firebase Auth User
-        try {
-             await adminAuth.updateUser(uid, {
-                 email: emailLower,
-                 emailVerified: true
-             });
-        } catch (fbError) {
-             console.error("Firebase Admin Update Error:", fbError);
-             return res.status(500).json({ error: fbError.message || "Failed to update Firebase email" });
-        }
-
-        // 5. Update Supabase Profile
-        const { error: profileError } = await supabaseAdmin
-            .from('profiles')
-            .update({ email: emailLower })
-            .eq('id', uid);
-
-        if (profileError) {
-            console.error("Supabase Profile Update Error:", profileError);
-            // Non-fatal, Firebase is updated, but might cause sync issues
-        }
-
-        // 6. Mint a fresh Custom Token so the frontend can silently re-authenticate
-        // (Firebase revokes existing tokens when email changes via Admin SDK)
-        const freshCustomToken = await adminAuth.createCustomToken(uid);
-
-        res.status(200).json({
-            message: 'Email updated successfully',
-            customToken: freshCustomToken
-        });
-
-    } catch (error) {
-        console.error('Verify Custom Update OTP Error:', error);
-        res.status(500).json({ error: 'Internal server error during verification' });
-    }
-};
-
-/**
- * Sync Profile to Supabase - uses supabaseAdmin to bypass RLS
+ * Sync Profile to Firestore
  */
 export const syncProfile = async (req, res) => {
     try {
         const { uid, email, phone, full_name, dob, gender } = req.body;
         if (!uid) return res.status(400).json({ error: 'UID is required' });
 
-        const { data: existing } = await supabaseAdmin
-            .from('profiles')
-            .select('id, role')
-            .eq('id', uid)
-            .maybeSingle();
-
-        const isNew = !existing;
+        const profileRef = adminDb.collection('profiles').doc(uid);
+        const doc = await profileRef.get();
+        const isNew = !doc.exists;
+        const existingData = doc.exists ? doc.data() : {};
 
         const profileData = {
             id: uid,
@@ -544,18 +233,11 @@ export const syncProfile = async (req, res) => {
             ...(full_name ? { full_name } : {}),
             ...(dob ? { dob } : {}),
             ...(gender ? { gender } : {}),
-            ...(isNew ? { role: 'user' } : {}),
+            ...(isNew ? { role: 'user' } : { role: existingData.role || 'user' }),
             updated_at: new Date().toISOString()
         };
 
-        const { error: upsertError } = await supabaseAdmin
-            .from('profiles')
-            .upsert(profileData, { onConflict: 'id' });
-
-        if (upsertError) {
-            console.error('[syncProfile] Upsert error:', upsertError.message);
-            return res.status(500).json({ error: upsertError.message });
-        }
+        await profileRef.set(profileData, { merge: true });
 
         res.status(200).json({ message: 'Profile synced' });
     } catch (error) {
@@ -565,49 +247,33 @@ export const syncProfile = async (req, res) => {
 };
 
 /**
- * Check if an email or phone already exists in the profiles table
+ * Check Identifier (Firestore check)
  */
 export const checkIdentifier = async (req, res) => {
     try {
         const { email, phone } = req.body;
-        if (!email && !phone) {
-            return res.status(400).json({ error: 'Email or phone is required' });
-        }
+        if (!email && !phone) return res.status(400).json({ error: 'Email or phone required' });
 
-        let query = supabaseAdmin.from('profiles').select('id, email, phone');
+        let query = adminDb.collection('profiles');
+        if (email) query = query.where('email', '==', email.toLowerCase());
+        else if (phone) query = query.where('phone', '==', phone);
 
-        if (email) {
-            query = query.eq('email', email.toLowerCase());
-        } else if (phone) {
-            query = query.eq('phone', phone);
-        }
+        const snapshot = await query.limit(1).get();
+        const exists = !snapshot.empty;
+        const data = exists ? { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } : null;
 
-        const { data, error } = await query.maybeSingle();
-
-        if (error) {
-            console.error('[checkIdentifier] Error:', error.message);
-            return res.status(500).json({ error: error.message });
-        }
-
-        res.status(200).json({ exists: !!data, profile: data || null });
+        res.json({ exists, profile: data });
     } catch (error) {
-        console.error('[checkIdentifier] Error:', error);
         res.status(500).json({ error: 'Failed to check identifier' });
     }
 };
 
 export default {
     signupWithEmail,
-    verifyEmailOTP,
-    signupWithPhone,
-    verifyPhoneOTP,
     loginWithEmail,
-    loginWithPhone,
-    resendOTP,
-    logout,
     getProfile,
     sendCustomEmailOTP,
     verifyCustomEmailOTP,
-    verifyCustomEmailUpdateOTP,
-    syncProfile
+    syncProfile,
+    checkIdentifier
 };

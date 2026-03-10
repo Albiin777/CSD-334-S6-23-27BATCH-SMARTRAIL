@@ -1,4 +1,4 @@
-import { supabase } from '../config/supabaseClient.js';
+import { adminDb } from '../config/firebaseAdmin.js';
 // PNR Generation Logic
 // Format: 10 Digits
 // First 3: Zone Code (System)
@@ -32,15 +32,12 @@ const generateUniquePNR = async (sourceStation) => {
         pnr = `${zoneCode}${uniqueId}`;
 
         // Check DB for existing PNR
-        const { data, error } = await supabase
-            .from('pnr_bookings')
-            .select('pnr')
-            .eq('pnr', pnr)
-            .single();
+        const snapshot = await adminDb.collection('pnr_bookings')
+            .where('pnr', '==', pnr)
+            .limit(1)
+            .get();
 
-        if (error && error.code === 'PGRST116') { // Not found error code (PostgREST)
-            isUnique = true;
-        } else if (!data) {
+        if (snapshot.empty) {
             isUnique = true;
         }
         // If data exists, loop again
@@ -91,17 +88,17 @@ const bookTicket = async (trainNumber, source, destination, journeyDate, classCo
     }
 
     // 2. Fetch Existing Bookings for this Train + Date + Class
-    const { data: existingBookings, error } = await supabase
-        .from('pnr_bookings')
-        .select(`
-            id, fromIndex, toIndex, 
-            passengers ( seatNumber, status, racNumber, wlNumber )
-        `)
-        .eq('trainNumber', trainNumber)
-        .eq('journeyDate', journeyDate)
-        .eq('classCode', classCode);
+    // 2. Fetch Existing Bookings from Firestore
+    const bookingsSnapshot = await adminDb.collection('pnr_bookings')
+        .where('trainNumber', '==', String(trainNumber))
+        .where('journeyDate', '==', journeyDate)
+        .where('classCode', '==', classCode)
+        .get();
 
-    if (error) throw new Error('Database error fetching bookings: ' + error.message);
+    const existingBookings = bookingsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+    }));
 
     // 3. Calculate Occupancy Map (Simple seat map based on segments)
     // We need to know which seats are occupied for the requested segment [fromIndex, toIndex].
@@ -197,41 +194,22 @@ const bookTicket = async (trainNumber, source, destination, journeyDate, classCo
         });
     }
 
-    // 7. Insert to DB (Transaction-like structure)
-    // Insert PNR
-    const { data: bookingData, error: bookingError } = await supabase
-        .from('pnr_bookings')
-        .insert({
-            pnr,
-            trainNumber,
-            journeyDate,
-            classCode,
-            source,
-            destination,
-            fromIndex,
-            toIndex,
-            user_id: userId // Tracks who made the booking
-        })
-        .select()
-        .single();
+    // 7. Insert to Firestore
+    const bookingDoc = {
+        pnr,
+        trainNumber: String(trainNumber),
+        journeyDate,
+        classCode,
+        source,
+        destination,
+        fromIndex,
+        toIndex,
+        user_id: userId,
+        passengers: passengerRecords,
+        created_at: new Date().toISOString()
+    };
 
-    if (bookingError) throw new Error('Failed to create PNR record: ' + bookingError.message);
-
-    // Insert Passengers with bookingIn
-    const passengersToInsert = passengerRecords.map(p => ({
-        ...p,
-        bookingId: bookingData.id
-    }));
-
-    const { error: passengerError } = await supabase
-        .from('passengers')
-        .insert(passengersToInsert);
-
-    if (passengerError) {
-        // Rollback (Manual since Supabase HTTP API doesn't support transactions easily without RPC)
-        await supabase.from('pnr_bookings').delete().eq('id', bookingData.id);
-        throw new Error('Failed to add passengers: ' + passengerError.message);
-    }
+    const docRef = await adminDb.collection('pnr_bookings').add(bookingDoc);
 
     // --- NEW: Generate Notification ---
     // Extract the primary status of the booking to determine the notification type/message
@@ -266,16 +244,15 @@ const bookTicket = async (trainNumber, source, destination, journeyDate, classCo
     // If we have a userId, insert the notification
     if (userId) {
         try {
-            await supabase.from('notifications').insert([
-                {
-                    "userId": userId,
-                    type: notifType,
-                    title: notifTitle,
-                    message: notifMessage,
-                    "forYou": true,
-                    link: `/?pnr=${pnr}#pnr-section`
-                }
-            ]);
+            await adminDb.collection('notifications').add({
+                userId: userId,
+                type: notifType,
+                title: notifTitle,
+                message: notifMessage,
+                forYou: true,
+                link: `/?pnr=${pnr}#pnr-section`,
+                created_at: new Date().toISOString()
+            });
         } catch (notifErr) {
             console.error("Failed to insert booking notification (non-fatal):", notifErr.message);
         }
@@ -289,78 +266,83 @@ const bookTicket = async (trainNumber, source, destination, journeyDate, classCo
 // ---------------------------------------------
 const cancelBooking = async (pnr, passengerId = null) => {
     // 1. Fetch Booking
-    const { data: booking, error } = await supabase
-        .from('pnr_bookings')
-        .select(`*, passengers(*)`)
-        .eq('pnr', pnr)
-        .single();
+    const snapshot = await adminDb.collection('pnr_bookings')
+        .where('pnr', '==', pnr)
+        .limit(1)
+        .get();
 
-    if (error || !booking) throw new Error('PNR not found');
+    if (snapshot.empty) throw new Error('PNR not found');
+    const bookingDoc = snapshot.docs[0];
+    const booking = { id: bookingDoc.id, ...bookingDoc.data() };
 
     let passengersToCancel = [];
+    let updatedPassengers = [];
+
     if (passengerId) {
-        passengersToCancel = booking.passengers.filter(p => p.id === passengerId);
+        booking.passengers.forEach(p => {
+            if (p.name === passengerId) {
+                passengersToCancel.push(p);
+            } else {
+                updatedPassengers.push(p);
+            }
+        });
     } else {
-        passengersToCancel = booking.passengers; // Cancel all
+        passengersToCancel = booking.passengers;
+        updatedPassengers = [];
     }
 
     const { trainNumber, journeyDate, classCode, fromIndex, toIndex } = booking;
     const canceledCnfSeats = [];
 
-    // Delete the passengers
-    for (const p of passengersToCancel) {
-        await supabase.from('passengers').delete().eq('id', p.id);
+    passengersToCancel.forEach(p => {
         if (p.status === 'CNF') {
             canceledCnfSeats.push(p.seatNumber);
         }
-    }
+    });
 
     // Process Promotions if any CNF seats freed
     if (canceledCnfSeats.length > 0) {
         await processPromotions(trainNumber, journeyDate, classCode, canceledCnfSeats, fromIndex, toIndex);
     }
 
-    // Check if any passengers left
-    const { count } = await supabase
-        .from('passengers')
-        .select('*', { count: 'exact', head: true })
-        .eq('bookingId', booking.id);
-
-    if (count === 0) {
-        await supabase.from('pnr_bookings').delete().eq('id', booking.id);
+    if (updatedPassengers.length === 0) {
+        await adminDb.collection('pnr_bookings').doc(booking.id).delete();
         return { message: 'Booking Cancelled Fully' };
+    } else {
+        await adminDb.collection('pnr_bookings').doc(booking.id).update({
+            passengers: updatedPassengers
+        });
+        return { message: 'Passenger Cancelled' };
     }
-
-    return { message: 'Passenger Cancelled' };
 };
 
 // Start Promotion Chain
 const processPromotions = async (trainNumber, journeyDate, classCode, freedSeats, freedFrom, freedTo) => {
     // 1. Fetch current waiting list for this train/date/class
-    const { data: waitlistPassengers, error } = await supabase
-        .from('pnr_bookings')
-        .select(`
-            id, fromIndex, toIndex, 
-            passengers ( id, status, wlNumber )
-        `)
-        .eq('trainNumber', trainNumber)
-        .eq('journeyDate', journeyDate)
-        .eq('classCode', classCode);
+    const snapshot = await adminDb.collection('pnr_bookings')
+        .where('trainNumber', '==', String(trainNumber))
+        .where('journeyDate', '==', journeyDate)
+        .where('classCode', '==', classCode)
+        .get();
 
-    if (error) {
-        console.error("Error fetching waitlist for promotion", error);
-        return;
-    }
+    const waitlistBookings = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+    }));
 
-    // Extract all WL passengers and sort by WL number
     let wlQueue = [];
-    waitlistPassengers.forEach(booking => {
+    // Extract all WL passengers and sort by WL number
+    waitlistBookings.forEach(booking => {
         // Skip bookings that don't overlap with the freed seat's route
         if (!(booking.fromIndex < freedTo && booking.toIndex > freedFrom)) return;
 
-        booking.passengers.forEach(p => {
+        booking.passengers.forEach((p, idx) => {
             if (p.status === 'WL' && p.wlNumber > 0) {
-                wlQueue.push({ ...p, bookingFrom: booking.fromIndex, bookingTo: booking.toIndex });
+                wlQueue.push({ 
+                    bookingId: booking.id, 
+                    passengerIdx: idx, 
+                    wlNumber: p.wlNumber 
+                });
             }
         });
     });
@@ -369,122 +351,104 @@ const processPromotions = async (trainNumber, journeyDate, classCode, freedSeats
 
     if (wlQueue.length === 0) return; // No one to promote
 
-    const updates = [];
+    // Map to store updates grouped by booking ID
+    const bookingUpdates = {}; // { bookingId: { passengers: [] } }
+
+    const applyPromo = (promo, status, seat, wl, rac) => {
+        if (!bookingUpdates[promo.bookingId]) {
+            const original = waitlistBookings.find(b => b.id === promo.bookingId);
+            bookingUpdates[promo.bookingId] = { passengers: [...original.passengers] };
+        }
+        const p = bookingUpdates[promo.bookingId].passengers[promo.passengerIdx];
+        p.status = status;
+        p.seatNumber = seat;
+        p.wlNumber = wl;
+        p.racNumber = rac;
+    };
 
     // SINGLE SEAT CANCELLATION LOGIC
     if (freedSeats.length === 1) {
         const freedSeat = freedSeats[0];
-        // Promote top 2 WL to RAC sharing this seat
         const p1 = wlQueue.shift();
-        if (p1) updates.push({ id: p1.id, status: 'RAC', seatNumber: `${freedSeat}-RAC-Share`, wlNumber: null, racNumber: 0 }); // racNumber 0 as it's a dynamic promotion
+        if (p1) applyPromo(p1, 'RAC', `${freedSeat}-RAC-Share`, null, 0);
 
         const p2 = wlQueue.shift();
-        if (p2) updates.push({ id: p2.id, status: 'RAC', seatNumber: `${freedSeat}-RAC-Share`, wlNumber: null, racNumber: 0 });
-    }
-    // BULK CANCELLATION LOGIC (e.g., > 1 seat freed)
-    else {
-        // As per requirements: Top 50% get full confirmed tickets, rest get RAC (2 per seat)
-        const numberOfSeatsFreed = freedSeats.length;
-        const totalWlToAccommodate = Math.min(wlQueue.length, numberOfSeatsFreed * 2);
-
-        const halfCount = Math.ceil(totalWlToAccommodate / 2);
-
-        // Give 50% of people full CNF seats
+        if (p2) applyPromo(p2, 'RAC', `${freedSeat}-RAC-Share`, null, 0);
+    } else {
+        const halfCount = Math.ceil(Math.min(wlQueue.length, freedSeats.length * 2) / 2);
         for (let i = 0; i < halfCount; i++) {
             if (wlQueue.length === 0 || freedSeats.length === 0) break;
             const p = wlQueue.shift();
-            const seat = freedSeats.shift(); // Take 1 full seat
-            updates.push({ id: p.id, status: 'CNF', seatNumber: seat, wlNumber: null, racNumber: null });
+            const seat = freedSeats.shift();
+            applyPromo(p, 'CNF', seat, null, null);
         }
-
-        // Give remaining people RAC seats (2 per remaining freed seat)
         while (wlQueue.length > 0 && freedSeats.length > 0) {
             const seat = freedSeats.shift();
-
             const p1 = wlQueue.shift();
-            if (p1) updates.push({ id: p1.id, status: 'RAC', seatNumber: `${seat}-RAC-Share`, wlNumber: null, racNumber: 0 });
-
+            if (p1) applyPromo(p1, 'RAC', `${seat}-RAC-Share`, null, 0);
             const p2 = wlQueue.shift();
-            if (p2) updates.push({ id: p2.id, status: 'RAC', seatNumber: `${seat}-RAC-Share`, wlNumber: null, racNumber: 0 });
+            if (p2) applyPromo(p2, 'RAC', `${seat}-RAC-Share`, null, 0);
         }
     }
 
-    // Apply DB Updates
-    for (const update of updates) {
-        await supabase.from('passengers').update({
-            status: update.status,
-            seatNumber: update.seatNumber,
-            wlNumber: update.wlNumber,
-            racNumber: update.racNumber
-        }).eq('id', update.id);
+    // Apply grouped updates
+    const batch = adminDb.batch();
+    for (const [id, data] of Object.entries(bookingUpdates)) {
+        const ref = adminDb.collection('pnr_bookings').doc(id);
+        batch.update(ref, { passengers: data.passengers });
     }
+    await batch.commit();
 
-    console.log(`Promoted ${updates.length} passengers from Waitlist due to cancellation.`);
+    console.log(`Promoted ${Object.keys(bookingUpdates).length} bookings' passengers from Waitlist.`);
 };
 
 // ---------------------------------------------
 // CORE SERVICE: Get Booking Status
 // ---------------------------------------------
 const getBookingStatus = async (pnr) => {
-    const { data, error } = await supabase
-        .from('pnr_bookings')
-        .select(`
-            id, pnr, trainNumber, journeyDate, classCode, source, destination,
-            passengers ( name, age, gender, seatNumber, status, racNumber, wlNumber )
-        `)
-        .eq('pnr', pnr)
-        .single();
+    const snapshot = await adminDb.collection('pnr_bookings')
+        .where('pnr', '==', pnr)
+        .limit(1)
+        .get();
 
-    if (error || !data) {
+    if (snapshot.empty) {
         throw new Error('PNR not found or server error');
     }
 
-    return data;
+    const doc = snapshot.docs[0];
+    return { id: doc.id, ...doc.data() };
 };
 
 // ---------------------------------------------
 // Get Booked Seats List (for Seat Layout View)
 // ---------------------------------------------
 const getBookedSeatsList = async (trainNumber, journeyDate) => {
-    // 1. Fetch all confirmed bookings for this train and date
-    const { data: bookings, error } = await supabase
-        .from('pnr_bookings')
-        .select(`
-            id,
-            passengers (
-                seatNumber,
-                status
-            )
-        `)
-        .eq('trainNumber', String(trainNumber))
-        .eq('journeyDate', journeyDate);
+    // 1. Fetch all bookings for this train and date
+    const snapshot = await adminDb.collection('pnr_bookings')
+        .where('trainNumber', '==', String(trainNumber))
+        .where('journeyDate', '==', journeyDate)
+        .get();
 
-    if (error) {
-        console.error("Error fetching bookings for layout:", error);
-        return [];
-    }
+    const bookings = snapshot.docs.map(doc => doc.data());
 
     // 2. Fetch all ACTIVE (non-expired) seat blocks
     const now = new Date().toISOString();
-    const { data: blockedSeats, error: blockError } = await supabase
-        .from('seat_blocks')
-        .select('seat_id')
-        .eq('train_number', String(trainNumber))
-        .eq('journey_date', journeyDate)
-        .gt('expires_at', now);
+    const blockSnapshot = await adminDb.collection('seat_blocks')
+        .where('train_number', '==', String(trainNumber))
+        .where('journey_date', '==', journeyDate)
+        .where('expires_at', '>', now)
+        .get();
 
-    if (blockError) {
-        console.error("Error fetching seat blocks for layout:", blockError);
-    }
+    const blockedSeats = blockSnapshot.docs.map(doc => doc.data());
 
     // 3. Extract seat numbers -> 'coachId-seatNumber'
     const unavailableSeatIds = new Set();
     
-    // Confirmed bookings
+    // Confirmed bookings (within passengers array)
     bookings.forEach(booking => {
         if (booking.passengers) {
             booking.passengers.forEach(p => {
-                if (p.seatNumber && p.status === 'CNF') {
+                if (p.status === 'CNF' && p.seatNumber) {
                     unavailableSeatIds.add(p.seatNumber);
                 }
             });
@@ -492,11 +456,9 @@ const getBookedSeatsList = async (trainNumber, journeyDate) => {
     });
 
     // Temporary blocks
-    if (blockedSeats) {
-        blockedSeats.forEach(b => {
-            unavailableSeatIds.add(b.seat_id);
-        });
-    }
+    blockedSeats.forEach(b => {
+        unavailableSeatIds.add(b.seat_id);
+    });
 
     return Array.from(unavailableSeatIds);
 };
@@ -505,19 +467,15 @@ const getBookedSeatsList = async (trainNumber, journeyDate) => {
 // CORE SERVICE: Get Booking History (By User ID)
 // ---------------------------------------------
 const getBookingHistoryByUserId = async (userId) => {
-    const { data: bookings, error } = await supabase
-        .from('pnr_bookings')
-        .select(`
-            *,
-            passengers (
-                id, name, age, gender, status, seatNumber, racNumber, wlNumber
-            )
-        `)
-        .eq('user_id', userId)
-        .order('journeyDate', { ascending: false });
+    const snapshot = await adminDb.collection('pnr_bookings')
+        .where('user_id', '==', userId)
+        .orderBy('journeyDate', 'desc')
+        .get();
 
-    if (error) throw new Error('Failed to fetch booking history: ' + error.message);
-    return bookings || [];
+    return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+    }));
 };
 
 export default {

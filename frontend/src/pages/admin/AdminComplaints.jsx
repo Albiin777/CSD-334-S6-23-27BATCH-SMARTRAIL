@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { supabase } from "../../utils/supabaseClient";
+import { db } from "../../utils/firebaseClient";
+import { collection, query, getDocs, doc, updateDoc, orderBy } from "firebase/firestore";
 
 const STATUS_COLORS = {
     open: "text-orange-400 bg-orange-500/10 border-orange-500/20",
@@ -19,27 +20,37 @@ export default function AdminComplaints() {
 
     const fetchComplaints = async () => {
         setLoading(true);
-        const { data } = await supabase
-            .from("complaints")
-            .select("*")
-            .order("created_at", { ascending: false });
-        if (data) setComplaints(data);
+        try {
+            const q = query(collection(db, "complaints"), orderBy("created_at", "desc"));
+            const snap = await getDocs(q);
+            setComplaints(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        } catch (err) { 
+            console.error("Failed to fetch complaints:", err); 
+        }
         setLoading(false);
     };
 
     const updateStatus = async (id, status) => {
-        await supabase.from("complaints").update({ status }).eq("id", id);
-        setComplaints(prev => prev.map(c => c.id === id ? { ...c, status } : c));
-        if (selected?.id === id) setSelected(prev => ({ ...prev, status }));
+        try {
+            await updateDoc(doc(db, "complaints", id), { status });
+            setComplaints(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+            if (selected?.id === id) setSelected(prev => ({ ...prev, status }));
+        } catch (err) { 
+            console.error("Failed to update status:", err); 
+        }
     };
 
     const sendReply = async () => {
         if (!reply.trim() || !selected) return;
         setSaving(true);
-        await supabase.from("complaints").update({ admin_reply: reply, status: "in-progress" }).eq("id", selected.id);
-        setComplaints(prev => prev.map(c => c.id === selected.id ? { ...c, admin_reply: reply, status: "in-progress" } : c));
-        setSelected(prev => ({ ...prev, admin_reply: reply, status: "in-progress" }));
-        setReply("");
+        try {
+            await updateDoc(doc(db, "complaints", selected.id), { admin_reply: reply, status: "in-progress" });
+            setComplaints(prev => prev.map(c => c.id === selected.id ? { ...c, admin_reply: reply, status: "in-progress" } : c));
+            setSelected(prev => ({ ...prev, admin_reply: reply, status: "in-progress" }));
+            setReply("");
+        } catch (err) { 
+            console.error("Failed to send reply:", err); 
+        }
         setSaving(false);
     };
 

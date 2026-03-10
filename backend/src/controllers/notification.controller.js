@@ -1,19 +1,28 @@
-import { supabase } from '../config/supabaseClient.js';
+import { adminDb } from '../config/firebaseAdmin.js';
 
 // Get notifications for a user (including global broadcasts where user_id is null)
 export const getUserNotifications = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .or(`user_id.eq.${userId},user_id.is.null`)
-      .order('created_at', { ascending: false });
+    // Firestore doesn't support complex OR queries easily in earlier SDKs, 
+    // but we can merge two results or use Filter.or
+    const userNotifsSnapshot = await adminDb.collection('notifications')
+      .where('userId', '==', userId)
+      .orderBy('created_at', 'desc')
+      .get();
 
-    if (error) throw error;
+    const broadcastNotifsSnapshot = await adminDb.collection('notifications')
+      .where('userId', '==', null)
+      .orderBy('created_at', 'desc')
+      .get();
 
-    res.json(data);
+    const notifications = [
+      ...userNotifsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+      ...broadcastNotifsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    res.json(notifications);
   } catch (error) {
     console.error('Error fetching notifications:', error);
     res.status(500).json({ message: 'Failed to fetch notifications', error: error.message });
@@ -26,17 +35,16 @@ export const markAsRead = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
 
-    const { data, error } = await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', id)
-      .eq('user_id', userId) // ensure user owns it
-      .select()
-      .single();
+    const notifRef = adminDb.collection('notifications').doc(id);
+    const notifDoc = await notifRef.get();
 
-    if (error) throw error;
+    if (!notifDoc.exists || notifDoc.data().userId !== userId) {
+      return res.status(404).json({ message: 'Notification not found or access denied' });
+    }
 
-    res.json(data);
+    await notifRef.update({ is_read: true });
+    
+    res.json({ id, ...notifDoc.data(), is_read: true });
   } catch (error) {
     res.status(500).json({ message: 'Failed to mark as read', error: error.message });
   }
@@ -47,17 +55,25 @@ export const markAllAsRead = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const { data, error } = await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('user_id', userId)
-      .eq('is_read', false)
-      .select();
+    const unreadSnapshot = await adminDb.collection('notifications')
+      .where('userId', '==', userId)
+      .where('is_read', '==', false)
+      .get();
 
-    if (error) throw error;
+    if (unreadSnapshot.empty) {
+      return res.json({ message: 'No unread notifications', updatedCount: 0 });
+    }
 
-    res.json({ message: 'All notifications marked as read', updatedCount: data?.length || 0 });
+    const batch = adminDb.batch();
+    unreadSnapshot.docs.forEach(doc => {
+      batch.update(doc.ref, { is_read: true });
+    });
+
+    await batch.commit();
+
+    res.json({ message: 'All notifications marked as read', updatedCount: unreadSnapshot.size });
   } catch (error) {
+    console.error('Error marking all as read:', error);
     res.status(500).json({ message: 'Failed to mark all as read', error: error.message });
   }
 };
@@ -67,27 +83,20 @@ export const createAdminBroadcast = async (req, res) => {
   try {
     const { type, title, message, link } = req.body;
     
-    // In a real system, you might verify req.user.role === 'admin' here.
-    // For SmartRail, we will just insert it as a broadcast (user_id = null)
-    
-    const { data, error } = await supabase
-      .from('notifications')
-      .insert([
-        { 
-          user_id: null, 
-          type, 
-          title, 
-          message, 
-          link,
-          for_you: false 
-        }
-      ])
-      .select()
-      .single();
+    const notifData = { 
+      userId: null, 
+      type, 
+      title, 
+      message, 
+      link,
+      for_you: false,
+      is_read: false,
+      created_at: new Date().toISOString()
+    };
 
-    if (error) throw error;
+    const docRef = await adminDb.collection('notifications').add(notifData);
 
-    res.status(201).json(data);
+    res.status(201).json({ id: docRef.id, ...notifData });
   } catch (error) {
     res.status(500).json({ message: 'Failed to broadcast notification', error: error.message });
   }

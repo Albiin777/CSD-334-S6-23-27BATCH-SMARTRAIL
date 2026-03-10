@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import { Upload, X, FileText, Image as ImageIcon, CheckCircle2, History, Loader2, AlertCircle, Trash2, Search, Train, ChevronRight } from "lucide-react";
-import { supabase, getCurrentUser } from "../utils/supabaseClient";
+import { 
+  History, Loader2, Upload, ImageIcon, X, FileText, 
+  Search, ChevronRight, CheckCircle2, AlertCircle, Trash2 
+} from "lucide-react";
+import { auth, storage } from "../utils/firebaseClient";
+import { onAuthStateChanged } from "firebase/auth";
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import api from "../api/train.api";
 
 export default function Support({ autoScroll = true }) {
@@ -37,19 +42,11 @@ export default function Support({ autoScroll = true }) {
   const trainDebounceRef = useRef(null);
 
   useEffect(() => {
-    // Custom wrapper to set user safely
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-    };
-    getUser();
-
-    // Listen for auth changes (login/logout)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
     });
 
-    return () => subscription.unsubscribe();
+    return () => unsubscribe();
   }, []);
 
   // Close suggestions on click outside
@@ -101,16 +98,16 @@ export default function Support({ autoScroll = true }) {
 
       setLoadingReplies(true);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          console.error('No session found');
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) {
+          console.error('No token found');
           setLoadingReplies(false);
           return;
         }
 
         const response = await fetch(`${import.meta.env.VITE_API_URL}/api/complaints/${selectedComplaint.id}/replies`, {
           headers: {
-            'Authorization': `Bearer ${session.access_token}`,
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           }
         });
@@ -149,14 +146,22 @@ export default function Support({ autoScroll = true }) {
   const fetchHistory = async () => {
     if (!user) return;
     setLoadingHistory(true);
-    const { data, error } = await supabase
-      .from('complaints')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (data) setHistory(data);
-    setLoadingHistory(false);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/complaints`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setHistory(data);
+      }
+    } catch (err) {
+      console.error("Error fetching history:", err);
+    } finally {
+      setLoadingHistory(false);
+    }
   };
 
   useEffect(() => {
@@ -186,15 +191,10 @@ export default function Support({ autoScroll = true }) {
     for (const file of files) {
       const fileExt = file.name.split('.').pop();
       const fileName = `${userId}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage
-        .from('support-evidence')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('support-evidence')
-        .getPublicUrl(fileName);
+      const storageRef = ref(storage, `support-evidence/${fileName}`);
+      
+      const snapshot = await uploadBytes(storageRef, file);
+      const publicUrl = await getDownloadURL(snapshot.ref);
 
       uploadedUrls.push(publicUrl);
     }
@@ -208,19 +208,19 @@ export default function Support({ autoScroll = true }) {
     setErrorMessage('');
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) {
         setErrorMessage('Please log in to send a reply');
         setTimeout(() => setErrorMessage(''), 3000);
         setSubmittingReply(false);
         return;
       }
 
-      // Use the backend API which has supabaseAdmin (bypasses RLS)
-      const response = await fetch(`http://localhost:5000/api/complaints/${selectedComplaint.id}/replies`, {
+      // Use the backend API which has firebaseAdmin (bypasses RLS)
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/complaints/${selectedComplaint.id}/replies`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -265,25 +265,24 @@ export default function Support({ autoScroll = true }) {
     try {
       // 1. Delete images from storage if they exist
       if (images && images.length > 0) {
-        const filePaths = images.map(url => {
-          // Extract path after 'support-evidence/'
-          // URL format: .../storage/v1/object/public/support-evidence/USER_ID/FILENAME
-          const parts = url.split('support-evidence/');
-          return parts.length > 1 ? parts[1] : null;
-        }).filter(Boolean);
-
-        if (filePaths.length > 0) {
-          const { error: storageError } = await supabase.storage
-            .from('support-evidence')
-            .remove(filePaths);
-
-          if (storageError) console.error("Error deleting files:", storageError);
+        for (const url of images) {
+          try {
+            const fileRef = ref(storage, url);
+            await deleteObject(fileRef).catch(e => console.error("Error deleting file:", e));
+          } catch (e) { console.error(e); }
         }
       }
 
-      // 2. Delete DB record
-      const { error } = await supabase.from('complaints').delete().eq('id', id);
-      if (error) throw error;
+      // 2. Delete DB record via backend
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/complaints/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to delete complaint');
 
       // Update local state
       setHistory(prev => prev.filter(item => item.id !== id));
@@ -319,14 +318,14 @@ export default function Support({ autoScroll = true }) {
 
       setSubmissionStatus("submitting");
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Authentication session expired.");
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Authentication session expired.");
 
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/complaints`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`
+          "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
           subject: complaintName,

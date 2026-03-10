@@ -1,7 +1,7 @@
 {
     "name": "smartrail-backend",
     "version": "1.0.0",
-    "description": "SmartRail Backend API with Supabase Authentication",
+    "description": "SmartRail Backend API with Firebase Consolidation",
     "main": "src/server.js",
     "type": "module",
     "scripts": {
@@ -11,12 +11,11 @@
     "keywords": [
         "railway",
         "authentication",
-        "supabase"
+        "firebase"
     ],
     "author": "",
     "license": "ISC",
     "dependencies": {
-        "@supabase/supabase-js": "^2.39.0",
         "bcrypt": "^5.1.1",
         "cors": "^2.8.5",
         "dotenv": "^16.3.1",

@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 
 let adminAuth;
+let adminDb;
 
 try {
   // If the user provided the JSON, we need to load it. 
@@ -19,12 +20,13 @@ try {
     }
     
     adminAuth = admin.auth();
+    adminDb = admin.firestore();
     console.log('Firebase Admin Initialized successfully.');
   } else {
-    console.warn(`Firebase Admin Service Account file not found at ${serviceAccountPath}. Custom Email OTP will fail.`);
+    console.warn(`Firebase Admin Service Account file not found at ${serviceAccountPath}. Custom Email OTP and Firestore will fail.`);
   }
 } catch (error) {
   console.error('Failed to initialize Firebase Admin SDK:', error);
 }
 
-export { adminAuth };
+export { adminAuth, adminDb };

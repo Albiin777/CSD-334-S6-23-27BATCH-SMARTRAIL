@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { supabase } from "../../utils/supabaseClient";
+import { db } from "../../utils/firebaseClient";
+import { collection, query, where, getDocs, addDoc, deleteDoc, doc } from "firebase/firestore";
 
 export default function TteManagement() {
     const [ttes, setTtes] = useState([]);
@@ -14,9 +15,15 @@ export default function TteManagement() {
 
     const fetchTtes = async () => {
         setLoading(true);
-        const { data, error } = await supabase.from("tte_accounts").select("*").order("created_at", { ascending: false });
-        if (data) setTtes(data);
-        if (error) console.error(error);
+        try {
+            const q = query(collection(db, "profiles"), where("role", "==", "tte"));
+            const snap = await getDocs(q);
+            const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            data.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+            setTtes(data);
+        } catch (error) {
+            console.error(error);
+        }
         setLoading(false);
     };
 
@@ -30,28 +37,40 @@ export default function TteManagement() {
         }
         setSubmitting(true);
 
-        // 1. Insert into tte_accounts table
-        const { error: dbErr } = await supabase.from("tte_accounts").insert([form]);
-        if (dbErr) {
-            setMsg({ type: "error", text: dbErr.message });
-            setSubmitting(false);
-            return;
-        }
+        try {
+            await addDoc(collection(db, "profiles"), {
+                name: form.name,
+                full_name: form.name,
+                email: form.email.toLowerCase(),
+                phone: form.phone,
+                employee_id: form.employee_id,
+                base_station: form.base_station,
+                role: "tte",
+                created_at: new Date().toISOString()
+            });
 
-        setMsg({ type: "success", text: `TTE ${form.name} created! They can log in using OTP with email: ${form.email}` });
-        setForm(emptyForm);
-        setShowForm(false);
-        fetchTtes();
+            setMsg({ type: "success", text: `TTE ${form.name} created! They can log in using OTP with email: ${form.email}` });
+            setForm(emptyForm);
+            setShowForm(false);
+            fetchTtes();
+        } catch (err) {
+            setMsg({ type: "error", text: err.message });
+        }
         setSubmitting(false);
         setTimeout(() => setMsg(null), 5000);
     };
 
     const handleDelete = async (id, name) => {
         if (confirmDelete !== id) { setConfirmDelete(id); return; }
-        await supabase.from("tte_accounts").delete().eq("id", id);
-        setConfirmDelete(null);
-        fetchTtes();
-        setMsg({ type: "success", text: `${name} removed.` });
+        
+        try {
+            await deleteDoc(doc(db, "profiles", id));
+            setConfirmDelete(null);
+            fetchTtes();
+            setMsg({ type: "success", text: `${name} removed.` });
+        } catch (err) {
+            console.error(err);
+        }
         setTimeout(() => setMsg(null), 3000);
     };
 

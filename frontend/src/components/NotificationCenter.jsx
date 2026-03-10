@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle, Ticket, Info, Newspaper, Bell, Inbox, CheckCircle2 } from 'lucide-react';
 import { notificationApi } from '../api/notification.api';
-import { supabase } from '../utils/supabaseClient';
+import { auth } from '../utils/firebaseClient';
+import { onAuthStateChanged } from 'firebase/auth';
 
 export default function NotificationCenter() {
     const [isOpen, setIsOpen] = useState(false);
@@ -14,17 +15,13 @@ export default function NotificationCenter() {
 
     const isLoggedIn = !!user;
 
-    // Supabase auth state listener
+    // Firebase auth state listener
     useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setUser(session?.user ?? null);
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
         });
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            setUser(session?.user ?? null);
-        });
-
-        return () => subscription.unsubscribe();
+        return () => unsubscribe();
     }, []);
 
     // Fetch initial notifications when component mounts or dropdown opens

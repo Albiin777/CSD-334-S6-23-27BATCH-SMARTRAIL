@@ -1,4 +1,4 @@
-import { supabase } from '../config/supabaseClient.js';
+import { adminDb } from '../config/firebaseAdmin.js';
 
 const blockSeat = async (req, res) => {
     try {
@@ -12,22 +12,21 @@ const blockSeat = async (req, res) => {
         // Set expiry to 10 minutes from now
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-        const { data, error } = await supabase
-            .from('seat_blocks')
-            .upsert({
-                train_number: String(trainNumber),
-                journey_date: journeyDate,
-                seat_id: seatId,
-                user_id: userId,
-                expires_at: expiresAt
-            }, {
-                onConflict: 'train_number,journey_date,seat_id'
-            })
-            .select();
+        // Use a composite ID for the document to handle the unique constraint
+        const blockId = `${trainNumber}_${journeyDate}_${seatId}`;
+        
+        const blockData = {
+            train_number: String(trainNumber),
+            journey_date: journeyDate,
+            seat_id: seatId,
+            user_id: userId,
+            expires_at: expiresAt,
+            updated_at: new Date().toISOString()
+        };
 
-        if (error) throw error;
+        await adminDb.collection('seat_blocks').doc(blockId).set(blockData);
 
-        res.status(200).json({ success: true, message: "Seat blocked successfully", data });
+        res.status(200).json({ success: true, message: "Seat blocked successfully", data: { id: blockId, ...blockData } });
     } catch (err) {
         console.error("Seat Blocking Error:", err);
         res.status(500).json({ error: err.message });
@@ -42,16 +41,8 @@ const unblockSeat = async (req, res) => {
             return res.status(400).json({ error: "Missing required details" });
         }
 
-        const { error } = await supabase
-            .from('seat_blocks')
-            .delete()
-            .match({
-                train_number: String(trainNumber),
-                journey_date: journeyDate,
-                seat_id: seatId
-            });
-
-        if (error) throw error;
+        const blockId = `${trainNumber}_${journeyDate}_${seatId}`;
+        await adminDb.collection('seat_blocks').doc(blockId).delete();
 
         res.status(200).json({ success: true, message: "Seat unblocked successfully" });
     } catch (err) {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import api from "../../api/train.api";
-import { supabase } from "../../utils/supabaseClient";
+import { db } from "../../utils/firebaseClient";
+import { collection, query, where, getDocs, addDoc, deleteDoc, doc, orderBy } from "firebase/firestore";
 
 const today = new Date().toISOString().split("T")[0];
 
@@ -25,13 +26,20 @@ export default function DutyAssignments() {
 
     useEffect(() => {
         (async () => {
-            const [aRes, tRes] = await Promise.all([
-                supabase.from("tte_assignments").select("*").order("created_at", { ascending: false }),
-                supabase.from("tte_accounts").select("*").order("name")
-            ]);
-            if (aRes.data) setAssignments(aRes.data);
-            if (tRes.data) setTtes(tRes.data);
-            setLoading(false);
+            try {
+                const [aSnap, tSnap] = await Promise.all([
+                    getDocs(query(collection(db, "tte_assignments"), orderBy("created_at", "desc"))),
+                    getDocs(query(collection(db, "profiles"), where("role", "==", "tte"))) // TTEs from profiles
+                ]);
+                setAssignments(aSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+                const ttesData = tSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                ttesData.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+                setTtes(ttesData);
+            } catch (err) {
+                console.error("Error fetching data:", err);
+            } finally {
+                setLoading(false);
+            }
         })();
     }, []);
 
@@ -92,24 +100,34 @@ export default function DutyAssignments() {
         if (!form.tte_name) { setError("Please select a TTE"); return; }
         if (selectedCoaches.length === 0) { setError("Please select at least one coach"); return; }
         setSaving(true);
-        const { error: dbErr } = await supabase.from("tte_assignments").insert({
-            ...form,
-            coach_ids: selectedCoaches,
-            status: "active",
-        });
-        if (dbErr) { setError(dbErr.message); setSaving(false); return; }
-        setSuccess(true);
-        setTimeout(() => setSuccess(false), 3000);
-        const { data } = await supabase.from("tte_assignments").select("*").order("created_at", { ascending: false });
-        if (data) setAssignments(data);
-        setForm({ tte_name: "", tte_id: "", tte_email: "", train_no: "", train_name: "", source_station: "", dest_station: "", duty_date: today, shift_start: "14:00", shift_end: "23:00", notes: "" });
-        setSelectedCoaches([]); setCoachList([]); setSearchQ("");
+        try {
+            await addDoc(collection(db, "tte_assignments"), {
+                ...form,
+                coach_ids: selectedCoaches,
+                status: "active",
+                created_at: new Date().toISOString()
+            });
+            setSuccess(true);
+            setTimeout(() => setSuccess(false), 3000);
+            
+            const aSnap = await getDocs(query(collection(db, "tte_assignments"), orderBy("created_at", "desc")));
+            setAssignments(aSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+            
+            setForm({ tte_name: "", tte_id: "", tte_email: "", train_no: "", train_name: "", source_station: "", dest_station: "", duty_date: today, shift_start: "14:00", shift_end: "23:00", notes: "" });
+            setSelectedCoaches([]); setCoachList([]); setSearchQ("");
+        } catch (dbErr) {
+            setError(dbErr.message); 
+        }
         setSaving(false);
     };
 
     const deleteAssignment = async (id) => {
-        await supabase.from("tte_assignments").delete().eq("id", id);
-        setAssignments(prev => prev.filter(a => a.id !== id));
+        try {
+            await deleteDoc(doc(db, "tte_assignments", id));
+            setAssignments(prev => prev.filter(a => a.id !== id));
+        } catch (err) {
+            console.error(err);
+        }
     };
 
     // Group coaches by class

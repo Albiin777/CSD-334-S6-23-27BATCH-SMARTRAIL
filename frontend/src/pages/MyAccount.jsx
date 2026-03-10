@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '../utils/supabaseClient';
-import { auth } from '../utils/firebaseClient';
+import { auth, db } from '../utils/firebaseClient';
+import { getDoc, doc } from 'firebase/firestore';
 import { syncUserProfile } from '../utils/userProfile';
 import { onAuthStateChanged, updateEmail, verifyBeforeUpdateEmail, RecaptchaVerifier, signInWithPhoneNumber, PhoneAuthProvider, updatePhoneNumber, signInWithCustomToken } from 'firebase/auth';
 import { User, Mail, Phone, ShieldCheck, Loader2, CheckCircle2, RotateCcw } from 'lucide-react';
@@ -37,21 +37,15 @@ export default function MyAccount() {
             let fullName = currentUser.displayName || currentUser.email?.split('@')[0];
             let email = currentUser.email || '';
             try {
-                const { data: profile, error: profileError } = await supabase
-                    .from('profiles')
-                    .select('phone, full_name, email, dob, gender')
-                    .eq('id', currentUser.uid)
-                    .single();
-                if (profileError) {
-                    console.warn('[MyAccount] Profile fetch error:', profileError.message);
-                }
-                if (profile) {
-                    phone = profile.phone || phone;
-                    fullName = profile.full_name || fullName;
-                    email = profile.email || email;
+                const profileDoc = await getDoc(doc(db, 'profiles', currentUser.uid));
+                if (profileDoc.exists()) {
+                    const profileData = profileDoc.data();
+                    phone = profileData.phone || phone;
+                    fullName = profileData.full_name || fullName;
+                    email = profileData.email || email;
                 }
             } catch (err) {
-                console.warn('[MyAccount] Could not load profile from Supabase:', err);
+                console.warn('[MyAccount] Could not load profile from Firestore:', err);
             }
             
             if (!mounted) return;
@@ -227,7 +221,7 @@ export default function MyAccount() {
                     }
                 }
 
-                // Always sync phone to Supabase profiles regardless of Firebase linking
+                // Always sync phone to Firestore profiles regardless of Firebase linking
                 await syncUserProfile(currentUser, { phone: newPhone });
                 setUser({ ...user, phone: newPhone });
                 setIsEditingPhone(false);

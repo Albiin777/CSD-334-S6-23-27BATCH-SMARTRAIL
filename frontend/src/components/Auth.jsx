@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { auth } from "../utils/firebaseClient";
+import { auth, db } from "../utils/firebaseClient";
+import { getDoc, doc } from "firebase/firestore";
 import { syncUserProfile } from "../utils/userProfile";
 import {
   signInWithEmailAndPassword,
@@ -304,18 +305,12 @@ export default function Auth({ onClose }) {
         user = result.user;
       }
 
-      // Sync basic info to Supabase (creates the row if new)
+      // Sync basic info to Firestore (creates the row if new)
       await syncUserProfile(user, user.phoneNumber ? { phone: user.phoneNumber } : { email: user.email });
 
       // Check if the profile is complete (has full_name). If not, send to profile step.
-      const { supabase } = await import('../utils/supabaseClient');
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('id', user.uid)
-        .maybeSingle();
-
-      const profileIsComplete = existingProfile?.full_name;
+      const profileDoc = await getDoc(doc(db, 'profiles', user.uid));
+      const profileIsComplete = profileDoc.exists() && profileDoc.data().full_name;
 
       if (!profileIsComplete) {
         setStep("profile");

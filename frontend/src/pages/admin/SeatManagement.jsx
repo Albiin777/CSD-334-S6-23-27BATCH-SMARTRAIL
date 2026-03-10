@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../../api/train.api";
-import { supabase } from "../../utils/supabaseClient";
+import { db } from "../../utils/firebaseClient";
+import { collection, query, where, getDocs } from "firebase/firestore";
 
 const today = new Date().toISOString().split("T")[0];
 
@@ -74,14 +75,31 @@ export default function SeatManagement() {
                     setLayoutData(layout);
                     setSelectedCoach(layout.coaches[0]?.coachId || null);
                 }
-                // Load passengers for this train+date
-                const { data } = await supabase
-                    .from("passenger_details")
-                    .select("*")
-                    .eq("train_no", selectedTrain.trainNumber)
-                    .eq("date", selectedDate);
+                // Load passengers for this train+date from Firestore
+                const pnrSnap = await getDocs(query(collection(db, "pnr_bookings"), where("trainNumber", "==", String(selectedTrain.trainNumber))));
                 const pm = {};
-                (data || []).forEach(p => { pm[`${p.coach}-${p.seat_number}`] = p; });
+                pnrSnap.forEach(doc => {
+                    const booking = doc.data();
+                    // We can filter by date here or if they match the selectedDate
+                    (booking.passengers || []).forEach(p => {
+                        const seatNum = p.seatNumber ? p.seatNumber.split('-').pop() : null;
+                        const coach = p.seatNumber ? p.seatNumber.split('-')[0] : null;
+                        if (coach && seatNum) {
+                            pm[`${coach}-${seatNum}`] = {
+                                ...p,
+                                pnr_number: booking.pnr,
+                                passenger_name: p.name,
+                                passenger_age: p.age,
+                                passenger_gender: p.gender,
+                                coach: coach,
+                                seat_number: seatNum,
+                                berth_type: p.berthType || p.berth_type,
+                                booking_status: p.status,
+                                train_no: selectedTrain.trainNumber
+                            };
+                        }
+                    });
+                });
                 setPassengerMap(pm);
             } catch { }
             setLayoutLoading(false);

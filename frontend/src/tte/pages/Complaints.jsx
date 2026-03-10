@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSmartRail } from '../hooks/useSmartRail';
-import { supabase } from '../lib/supabaseClient';
+import { db } from '../../utils/firebaseClient';
+import { doc, updateDoc, addDoc, collection } from 'firebase/firestore';
 import { AlertCircle, CheckCircle, Clock, User, MessageSquare, Send, Search, X, FileText } from 'lucide-react';
 
 const priorityColor = { High: 'text-red-400 bg-red-500/10 border-red-500/20', Medium: 'text-amber-400 bg-amber-500/10 border-amber-500/20', Low: 'text-blue-400 bg-blue-500/10 border-blue-500/20' };
@@ -37,10 +38,12 @@ export default function Complaints() {
         setComplaints(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c));
         if (selected?.id === id) setSelected(prev => ({ ...prev, status: newStatus }));
 
-        // Sync to Supabase
+        // Sync to Firestore
         const complaint = complaints.find(c => c.id === id);
-        if (supabase && complaint?.dbId) {
-            await supabase.from('complaints').update({ status: newStatus }).eq('id', complaint.dbId);
+        if (complaint?.dbId) {
+            try {
+                await updateDoc(doc(db, 'complaints', complaint.dbId), { status: newStatus });
+            } catch (err) { console.error(err); }
         }
     };
 
@@ -58,14 +61,17 @@ export default function Complaints() {
         if (selected?.id === id) setSelected(prev => ({ ...prev, responses: [...prev.responses, responseObj] }));
         setNewResponse('');
 
-        // Sync to Supabase
+        // Sync to Firestore
         const complaint = complaints.find(c => c.id === id);
-        if (supabase && complaint?.dbId) {
-            await supabase.from('complaint_replies').insert({
-                complaint_id: complaint.dbId,
-                reply_text: newResponse,
-                replied_by: tteInfo.name || 'TTE',
-            });
+        if (complaint?.dbId) {
+            try {
+                await addDoc(collection(db, 'complaint_replies'), {
+                    complaint_id: complaint.dbId,
+                    reply_text: newResponse,
+                    replied_by: tteInfo.name || 'TTE',
+                    created_at: new Date().toISOString()
+                });
+            } catch (err) { console.error(err); }
         }
         setSaving(false);
     };
