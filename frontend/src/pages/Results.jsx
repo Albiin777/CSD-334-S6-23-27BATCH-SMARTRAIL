@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import api from "../api/train.api";
+import { auth } from "../utils/firebaseClient";
 
 export default function Results() {
     const [searchParams] = useSearchParams();
@@ -361,6 +362,12 @@ export default function Results() {
                                                     const textClass = color === "green" ? "text-green-400" : color === "orange" ? "text-orange-400" : "text-red-400";
 
                                                     const handleClassClick = () => {
+                                                        const currentUser = auth.currentUser;
+                                                        if (!currentUser) {
+                                                            window.dispatchEvent(new CustomEvent('open-auth'));
+                                                            return;
+                                                        }
+
                                                         if (isUnreserved) {
                                                             navigate('/passenger-details', {
                                                                 state: {

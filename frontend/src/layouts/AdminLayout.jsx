@@ -5,13 +5,10 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 
 import { LayoutDashboard, Train, Armchair, Users, ClipboardList, Banknote, MessageSquare, Bell, LineChart, ShieldCheck, LogOut, Menu, X } from "lucide-react";
 
-// For missing generic icons, you can fetch or just use standard modern SVGs. We'll use lucide-react which is standard.
-// Let's create simple SVG wrappers since lucide-react might not be installed. Wait, is it installed? Let's check package.json. If we are unsure, we can use raw SVGs.
-// Raw SVG icons:
 const ICONS = {
     Dashboard: ({ className }) => <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>,
     Trains: ({ className }) => <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h14M5 8a2 2 0 00-2 2v8a2 2 0 002 2h14a2 2 0 002-2v-8a2 2 0 00-2-2H5z" /></svg>,
-    Seats: ({ className }) => <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>, // simple lines for seats
+    Seats: ({ className }) => <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>,
     Users: ({ className }) => <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>,
     Assign: ({ className }) => <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
     Fares: ({ className }) => <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
@@ -56,7 +53,6 @@ export default function AdminLayout() {
 
     return (
         <div className="min-h-screen flex bg-[#080f1e] text-gray-100 font-sans">
-
             {/* Overlay for mobile */}
             {sideOpen && (
                 <div
@@ -65,37 +61,31 @@ export default function AdminLayout() {
                 />
             )}
 
-            {/* ── Sidebar ───────────────────────────────────────────── */}
+            {/* Sidebar */}
             <aside className={`
-        fixed inset-y-0 left-0 z-40 flex flex-col w-64 bg-[#0d1526] border-r border-white/5
-        transform transition-transform duration-300 ease-in-out
-        ${sideOpen ? "translate-x-0" : "-translate-x-full"}
-        md:translate-x-0 md:static md:inset-auto
-      `}>
-                {/* Logo */}
+                fixed inset-y-0 left-0 z-40 flex flex-col w-64 bg-[#0d1526] border-r border-white/5
+                transform transition-transform duration-300 ease-in-out
+                ${sideOpen ? "translate-x-0" : "-translate-x-full"}
+                md:translate-x-0 md:static md:inset-auto
+            `}>
                 <div className="flex items-center gap-3 px-6 py-6 border-b border-white/5 bg-[#0a1120]">
                     <div className="w-10 h-10 flex items-center justify-center">
-                        <img src="/trainwhite.png" alt="SmartRail Logo" className="w-full h-full object-contain drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
+                        <img src="/trainwhite.png" alt="Logo" className="w-full h-full object-contain" />
                     </div>
                     <div>
-                        <div className="text-white font-extrabold text-base tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">SmartRail</div>
-                        <div className="text-[#10b981] text-[10px] font-bold uppercase tracking-[0.2em] mt-0.5">Admin Workspace</div>
+                        <div className="text-white font-extrabold text-base tracking-wide">SmartRail</div>
+                        <div className="text-[#10b981] text-[10px] font-bold uppercase tracking-[0.2em]">Admin</div>
                     </div>
-                    <button className="ml-auto md:hidden text-gray-400 hover:text-white transition" onClick={() => setSideOpen(false)}>
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    <button className="ml-auto md:hidden text-gray-400 hover:text-white" onClick={() => setSideOpen(false)}>
+                        <X className="w-5 h-5" />
                     </button>
                 </div>
 
-                {/* Admin info */}
                 <div className="px-6 py-4 border-b border-white/5 bg-[#0d1526]/50">
-                    <div className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Authenticated Session</div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse"></div>
-                        <div className="text-gray-200 text-sm font-medium truncate">{adminEmail}</div>
-                    </div>
+                    <div className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Session</div>
+                    <div className="text-gray-200 text-sm font-medium truncate">{adminEmail}</div>
                 </div>
 
-                {/* Nav */}
                 <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-1.5 scrollbar-hide">
                     {NAV.map(item => (
                         <NavLink
@@ -104,81 +94,57 @@ export default function AdminLayout() {
                             end={item.exact}
                             onClick={() => setSideOpen(false)}
                             className={({ isActive }) =>
-                                `group flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ease-out
-                ${isActive
-                                    ? "bg-gradient-to-r from-[#10b981]/10 to-transparent text-[#10b981] border-l-2 border-[#10b981]"
-                                    : "text-gray-400 hover:text-gray-100 hover:bg-white/5 hover:translate-x-1 border-l-2 border-transparent"
-                                }`
+                                `group flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold transition-all
+                                ${isActive ? "bg-[#10b981]/10 text-[#10b981] border-l-2 border-[#10b981]" : "text-gray-400 hover:text-gray-100 hover:bg-white/5"}`
                             }
                         >
-                            {({ isActive }) => (
-                                <>
-                                    <item.icon className={`w-5 h-5 transition-colors duration-300 ${isActive ? "text-[#10b981]" : "text-gray-500 group-hover:text-gray-300"}`} />
-                                    <span>{item.label}</span>
-                                </>
-                            )}
+                            <item.icon className="w-5 h-5" />
+                            <span>{item.label}</span>
                         </NavLink>
                     ))}
                 </nav>
 
-                {/* Logout */}
                 <div className="p-4 border-t border-white/5 bg-[#0a1120]">
-                    <button
-                        onClick={handleLogout}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/10 font-bold text-sm transition-all duration-300 hover:shadow-[0_0_15px_rgba(239,68,68,0.2)]"
-                    >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                    <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold text-sm transition-all">
+                        <LogOut className="w-4 h-4" />
                         Sign Out Session
                     </button>
                 </div>
             </aside>
 
-            {/* ── Main area ─────────────────────────────────────────── */}
-            <div className="flex-1 flex flex-col min-w-0 min-h-screen">
-
-                {/* Top bar (mobile) */}
-                <header className="sticky top-0 z-20 flex items-center justify-between px-5 py-4 bg-[#080f1e]/90 backdrop-blur-md border-b border-white/5 md:hidden">
-                    <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center text-white shadow-[0_0_10px_rgba(16,185,129,0.3)]">
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                            </svg>
-                        </div>
-                        <span className="text-white font-extrabold text-sm tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">Admin Portal</span>
-                    </div>
-                    <button
-                        onClick={() => setSideOpen(true)}
-                        className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 text-gray-300 hover:text-white border border-white/5 hover:bg-white/10 transition-colors"
-                    >
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
-                    </button>
-                </header>
-
-                {/* Desktop top bar */}
-                <header className="hidden md:flex items-center justify-between px-8 py-5 bg-[#080f1e]/80 backdrop-blur-lg border-b border-white/5 sticky top-0 z-20">
+            {/* Main Area */}
+            <div className="flex-1 flex flex-col min-w-0">
+                <header className="flex items-center justify-between px-8 py-5 bg-[#080f1e]/80 backdrop-blur-lg border-b border-white/5 sticky top-0 z-20">
                     <div className="flex items-center gap-3 text-sm font-medium">
                         <span className="text-gray-400">Workspace</span>
-                        <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        <ArrowRight className="w-4 h-4 text-gray-600" />
                         <span className="text-gray-200">System Dashboard</span>
                     </div>
-                    <div className="flex items-center gap-5">
+                    <button onClick={() => setSideOpen(true)} className="md:hidden p-2 text-gray-400"><Menu className="w-6 h-6" /></button>
+                    <div className="hidden md:flex items-center gap-5">
                         <div className="flex items-center gap-3 px-4 py-1.5 rounded-full bg-white/5 border border-white/5">
                             <div className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse"></div>
-                            <span className="text-xs text-gray-300 font-medium">System Online</span>
+                            <span className="text-xs text-gray-300">System Online</span>
                         </div>
-                        <button onClick={handleLogout} className="group flex items-center justify-center w-10 h-10 rounded-xl hover:bg-red-500/10 text-gray-400 hover:text-red-400 transition-colors">
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                        </button>
                     </div>
                 </header>
 
-                {/* Page content */}
-                <main className="flex-1 overflow-x-hidden">
-                    <div className="p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto">
-                        <Outlet />
-                    </div>
+                <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto w-full">
+                    <Outlet />
+                    
+                    {/* Integrated Footer */}
+                    <footer className="mt-12 pt-8 border-t border-white/5 text-center">
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em]">
+                            © 2026 SmartRail • Intelligent Network Operations
+                        </p>
+                    </footer>
                 </main>
             </div>
         </div>
     );
 }
+
+// Internal small arrow component since I didn't import it
+const ArrowRight = ({ className }) => (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+);

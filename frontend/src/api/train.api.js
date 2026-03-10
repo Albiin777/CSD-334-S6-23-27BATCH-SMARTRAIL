@@ -3,8 +3,23 @@
 
 // Use environment variable or fallback to localhost
 import { API_BASE_URL } from './config';
+import { auth } from '../utils/firebaseClient';
 
 const api = {
+    // Helper for authenticated requests
+    _fetchWithAuth: async (url, options = {}) => {
+        const user = auth.currentUser;
+        if (user) {
+            const token = await user.getIdToken();
+            options.headers = {
+                ...options.headers,
+                'Authorization': `Bearer ${token}`
+            };
+        }
+        const res = await fetch(url, options);
+        return res;
+    },
+
     // --- Trains ---
 
     // Search trains by name or number
@@ -120,7 +135,7 @@ const api = {
     // Create Booking
     // Payload: { trainNumber, journeyDate, classCode, source, destination, passengers: [{name, age, gender}] }
     createBooking: async (bookingPayload) => {
-        const res = await fetch(`${API_BASE_URL}/bookings`, {
+        const res = await api._fetchWithAuth(`${API_BASE_URL}/bookings`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(bookingPayload)
@@ -135,7 +150,7 @@ const api = {
 
     // Create Unreserved Booking
     bookUnreserved: async (bookingPayload) => {
-        const res = await fetch(`${API_BASE_URL}/unreserved/book`, {
+        const res = await api._fetchWithAuth(`${API_BASE_URL}/unreserved/book`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(bookingPayload)
@@ -178,7 +193,7 @@ const api = {
 
     // Cancel Booking
     cancelBooking: async (pnr) => {
-        const res = await fetch(`${API_BASE_URL}/bookings/${pnr}`, {
+        const res = await api._fetchWithAuth(`${API_BASE_URL}/bookings/${pnr}`, {
             method: 'DELETE'
         });
 
@@ -192,7 +207,7 @@ const api = {
     // --- Seat Blocking ---
 
     blockSeat: async (blockPayload) => {
-        const res = await fetch(`${API_BASE_URL}/seat-blocks/block`, {
+        const res = await api._fetchWithAuth(`${API_BASE_URL}/seat-blocks/block`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(blockPayload)
@@ -202,7 +217,7 @@ const api = {
     },
 
     unblockSeat: async (blockPayload) => {
-        const res = await fetch(`${API_BASE_URL}/seat-blocks/unblock`, {
+        const res = await api._fetchWithAuth(`${API_BASE_URL}/seat-blocks/unblock`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(blockPayload)

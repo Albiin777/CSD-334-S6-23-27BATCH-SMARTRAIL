@@ -291,6 +291,13 @@ export default function App() {
     return () => unsubscribe();
   }, [navigate, location.pathname]);
 
+  // Global listener for auth triggers
+  useEffect(() => {
+    const handleAuthTrigger = () => setIsAuthOpen(true);
+    window.addEventListener('open-auth', handleAuthTrigger);
+    return () => window.removeEventListener('open-auth', handleAuthTrigger);
+  }, []);
+
   // Ensure landing at top (hero) on every page load — do not restore previous scroll.
   useEffect(() => {
     // 1. Force manual scroll restoration to prevent browser from remembering scroll position
@@ -377,7 +384,7 @@ export default function App() {
               </Routes>
             </main>
           </div>
-          {isMiniFooterPage ? <MiniFooter /> : <Footer />}
+          {!location.pathname.startsWith('/admin') && (isMiniFooterPage ? <MiniFooter /> : <Footer />)}
         </>
       )}
     </div>

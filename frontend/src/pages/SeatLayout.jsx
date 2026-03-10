@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/train.api";
+import { auth } from "../utils/firebaseClient";
 
 // ── Berth-type display labels & colours ──────────────────────────────────────
 const BERTH_LABEL = {
@@ -292,6 +293,10 @@ export default function SeatLayout() {
     };
 
     const handleProceed = () => {
+        if (!auth.currentUser) {
+            window.dispatchEvent(new CustomEvent('open-auth'));
+            return;
+        }
         if (!isUnreservedClass && selectedSeats.length !== passengerCount) {
             alert(`Please select exactly ${passengerCount} seat${passengerCount > 1 ? 's' : ''}.`);
             return;

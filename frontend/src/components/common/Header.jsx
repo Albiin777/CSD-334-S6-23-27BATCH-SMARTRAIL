@@ -20,7 +20,12 @@ function Header({ onLoginClick, user: propUser, userRole, isAuthLoading }) {
   };
 
   const isPaymentPage = location.pathname.startsWith('/payment');
-  const hideLabelNavbar = location.pathname.startsWith('/seat-layout') || location.pathname.startsWith('/passenger-details') || isPaymentPage || userRole === 'tte';
+  const isAdminPage = location.pathname.startsWith('/admin');
+  const hideLabelNavbar = location.pathname.startsWith('/seat-layout') || 
+                          location.pathname.startsWith('/passenger-details') || 
+                          isPaymentPage || 
+                          userRole === 'tte' ||
+                          isAdminPage;
 
   // Sync prop user to local name for UI
   const displayName = getDisplayName(propUser);
@@ -36,7 +41,7 @@ function Header({ onLoginClick, user: propUser, userRole, isAuthLoading }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  if (isPaymentPage || userRole === 'tte') {
+  if (isPaymentPage || userRole === 'tte' || isAdminPage) {
     return null;
   }
 
