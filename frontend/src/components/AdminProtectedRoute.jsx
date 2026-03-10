@@ -4,6 +4,8 @@ import { auth, db } from '../utils/firebaseClient';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
+import { AUTHORIZED_ADMINS } from '../utils/roles.config';
+
 export const AdminProtectedRoute = ({ children }) => {
     const [user, setUser] = useState(null);
     const [userRole, setUserRole] = useState(null);
@@ -36,10 +38,10 @@ export const AdminProtectedRoute = ({ children }) => {
         return <div className="min-h-screen pt-20 flex items-center justify-center bg-[#0f172a] text-white">Loading...</div>;
     }
 
-    // Only allow if logged in and the email is the specific admin email or has admin role
-    const validAdmins = ['admin@gmail.com', 'hashlinairah@gmail.com'];
+    // Only allow if logged in and the email is in the centralized config or has admin role
+    const emailLower = user?.email?.toLowerCase();
     
-    if (user && (validAdmins.includes(user.email) || userRole === 'admin')) {
+    if (user && (AUTHORIZED_ADMINS.includes(emailLower) || userRole === 'admin')) {
         return children;
     }
 

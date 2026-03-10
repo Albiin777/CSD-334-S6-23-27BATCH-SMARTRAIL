@@ -236,63 +236,56 @@ export default function App() {
         // Clean up the URL without a full page reload so it doesn't loop
         window.history.replaceState({}, document.title, "/");
       });
-      return; // Exit early so we don't process further auth steps on this mount
     }
+  }, []); // Run only once on mount to handle external logouts
 
+  useEffect(() => {
     // Listen for auth changes using Firebase
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      // If we are still "loading", signal it's done for the first time
       setIsAuthLoading(false);
 
       if (currentUser) {
         setUser(currentUser);
 
-        // Fetch user role from Firestore
-        let role = null;
+        // Fetch user role from Firestore ONLY if we don't have it or user changed
+        // This prevents re-fetching role on every render/navigation
         try {
           const profileDoc = await getDoc(doc(db, 'profiles', currentUser.uid));
           if (profileDoc.exists()) {
-            role = profileDoc.data().role;
+            const role = profileDoc.data().role;
             setUserRole(role);
-          } else {
-            console.log("No profile found for user:", currentUser.uid);
+            
+            // Role-based redirection logic
+            const email = currentUser.email?.toLowerCase() || "";
+            const isAdmin = AUTHORIZED_ADMINS.includes(email) || role === 'admin';
+            const isTte = AUTHORIZED_TTES.includes(email) || email.includes('tte') || role === 'tte';
+
+            if (isAdmin && !window.location.pathname.startsWith('/admin')) {
+              navigate('/admin');
+            } else if (isTte && !window.location.pathname.startsWith('/tte')) {
+              navigate('/tte');
+            } else if ((window.location.pathname === '/login' || window.location.pathname === '/signup') && currentUser.displayName) {
+               navigate('/');
+            }
           }
         } catch (error) {
-          console.error("Error fetching user role from Firestore:", error);
-        }
-
-        const email = currentUser.email?.toLowerCase() || "";
-
-        // Use the centralized config lists
-        const isAdmin = AUTHORIZED_ADMINS.includes(email) || role === 'admin';
-        const isTte = AUTHORIZED_TTES.includes(email) || email.includes('tte') || role === 'tte';
-
-        // If newly signed in within this listener...
-        // Navigate based on roles derived from email or the Firestore fetch
-        // IMPORTANT: Only redirect away from login/signup if the profile is reasonably complete (has a displayName)
-        // Otherwise, let Auth.jsx handle the 'profile' completion step first.
-        if (isAdmin && !location.pathname.startsWith('/admin')) {
-          navigate('/admin');
-        } else if (isTte && !location.pathname.startsWith('/tte')) {
-          navigate('/tte');
-        } else if ((location.pathname === '/login' || location.pathname === '/signup') && currentUser.displayName) {
-           navigate('/');
+          console.error("Error fetching user role:", error);
         }
       } else {
         setUser(null);
         setUserRole(null);
-        // Only redirect when Firebase has confirmed there is NO active session.
-        // `setIsAuthLoading(false)` is called BEFORE this point (in the currentUser branch
-        // and the logout early-return), so by the time we reach here the auth state is real.
-        // This prevents kicking a legitimately logged-in TTE/Admin off their page on hard refresh.
+        
+        // Only redirect away from protected routes if NOT loading
         const protectedRoutes = ['/my-account', '/my-bookings', '/admin', '/tte'];
-        if (protectedRoutes.some(route => location.pathname.startsWith(route))) {
+        if (protectedRoutes.some(route => window.location.pathname.startsWith(route))) {
           navigate('/');
         }
       }
     });
 
     return () => unsubscribe();
-  }, [navigate, location.pathname]);
+  }, [navigate]); // Stable dependencies
 
   // Global listener for auth triggers
   useEffect(() => {
