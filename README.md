@@ -1,275 +1,136 @@
-🚆 Smart Rail – Visual Train Seat Booking System
+# Smart Rail – Visual Train Seat Booking System
 
-Smart Rail is a modern web-based train ticket booking platform that enhances traditional railway reservation systems by introducing visual seat selection, intelligent assistance, and accessibility-focused features.
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Open%20Website-111827?style=for-the-badge&logo=vercel&logoColor=white)](https://smartrail-26.vercel.app/)
 
-Unlike conventional booking platforms that only display seat numbers, Smart Rail provides an interactive visual coach layout, allowing passengers to choose seats based on comfort, preference, and accessibility needs. 
+![React](https://img.shields.io/badge/Frontend-React-61DAFB?style=for-the-badge&logo=react&logoColor=black)
+![Node.js](https://img.shields.io/badge/Backend-Node.js-339933?style=for-the-badge&logo=node.js&logoColor=white)
+![REST API](https://img.shields.io/badge/API-REST-0EA5E9?style=for-the-badge&logo=fastapi&logoColor=white)
+![Firebase](https://img.shields.io/badge/Auth-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)
 
-SMART RAIL
+---
 
-The platform is designed to improve user experience, booking clarity, and decision-making during the train reservation process.
+## Project Overview
 
-📌 Table of Contents
+Smart Rail is a web-based railway booking and management platform designed to improve the passenger booking experience. The system allows users to search trains, view schedules, check seat availability, select seats visually, and book tickets through an interactive interface.
 
-Overview
+An AI chatbot assists users with train search, waiting list prediction, and seat recommendations. The platform also provides management tools for railway staff and administrators.
 
-Problem Statement
+---
 
-Proposed Solution
+## Problem Statement
 
-Key Features
+Traditional railway booking systems mainly provide basic ticket booking and train schedules but lack intelligent assistance and visualization features.
 
-System Modules
+Passengers cannot view seat layouts before booking and receive little support in making travel decisions. Railway staff also lack integrated tools for passenger verification and incident management.
 
-Technology Stack
+---
 
-System Requirements
+## Target Audience
 
-Database Design
+- Passengers who need an easier way to search and book train tickets  
+- Railway Ticket Examiners for passenger verification and ticket issuing  
+- Railway administrators for managing trains, bookings, and complaints  
 
-Installation & Setup
+---
 
-Project Structure
+## Key Features
 
-Future Improvements
+### Passenger
 
-Team Members
+- Train search and schedule viewing  
+- Visual seat layout selection  
+- Ticket booking and PNR status checking  
+- AI chatbot assistance  
+- Seat recommendation and waiting list prediction  
+- Complaint submission and train reviews  
 
-📖 Overview
+### Ticket Examiner
 
-Railway booking platforms such as IRCTC primarily rely on text-based seat allocation, which limits the user's ability to select seats according to their preference.
+- Passenger verification  
+- Ticket issuing  
+- Fine management  
+- Incident reporting  
 
-Smart Rail solves this issue by introducing:
+### Admin
 
-Visual seat maps
+- Train and user management  
+- Booking monitoring  
+- Complaint handling
+- Tte management
+- Fair editor
+- Notification handling
 
-Comfort-based seat selection
+---
 
-AI-powered assistance
+## System Modules
 
-Complaint tracking system
+- **Authentication Module** – Handles user login and registration  
+- **Train Search Module** – Retrieves train schedules and availability  
+- **Seat Visualization Module** – Displays visual seat layout  
+- **Booking Module** – Manages ticket booking and confirmation  
+- **AI Chatbot Module** – Provides intelligent assistance  
+- **Complaint Management Module** – Handles passenger complaints  
+- **Admin Module** – Controls system management  
 
-Accessibility features for senior and special passengers
+---
 
-The system focuses on delivering a user-centric and efficient train reservation experience. 
+## Methodology
 
-SMART RAIL
+1. User logs into the system  
+2. Passenger searches trains using source and destination  
+3. System retrieves train schedules and seat availability  
+4. Passenger views seat layout and selects seats  
+5. Booking is confirmed and ticket is generated  
+6. AI chatbot assists with travel queries  
+7. Admin monitors bookings and complaints  
 
-⚠️ Problem Statement
+---
 
-Current railway booking systems have several limitations:
+## Technology Stack
 
-Lack of visual seat layout representation
+### Frontend
+- React.js  
+- HTML  
+- CSS  
+- Tailwind CSS  
 
-No comfort-based seat recommendation
+### Backend
+- Node.js  
+- Express.js  
+- REST API  
 
-Limited AI assistance during booking
+### AI Chatbot
+- Rasa Framework  
+- Python  
 
-Poor complaint tracking systems
+### Authentication
+- Firebase Authentication  
 
-Lack of accessibility features for senior citizens and special passengers
+---
 
-These limitations make the booking experience less intuitive and less user-friendly. 
+## Hardware Requirements
 
-SMART RAIL
+- Processor: Intel i3 or higher  
+- RAM: Minimum 4 GB  
+- Stable internet connection  
 
-💡 Proposed Solution
+---
 
-Smart Rail addresses these problems by providing:
+## Project Team
 
-Interactive coach and seat visualization
+- Albin Thomas  
+- Fidha Safar  
+- Joshua George Abraham  
+- Raisha Hashly  
 
-Priority seating suggestions for elderly passengers
+**Project Guide**
 
-Co-passenger based recommendations
+Usha Gopalakrishnan  
 
-AI chatbot assistance during booking
+---
 
-Admin dashboard for system management
+## Conclusion
 
-This approach improves clarity, accessibility, and user satisfaction during ticket booking. 
+Smart Rail provides a modern railway booking system that improves passenger convenience through visual seat selection, AI assistance, and centralized system management.
 
-SMART RAIL
-
-✨ Key Features
-🎟 Train Search
-
-Search trains by source and destination
-
-View train schedules with arrival and departure times
-
-🪑 Visual Seat Selection
-
-Interactive coach layout
-
-Color-coded seat availability
-
-Easy seat selection
-
-🎫 Ticket Management
-
-Book tickets
-
-View booking history
-
-Cancel tickets
-
-🤖 AI Chatbot
-
-Helps users search trains
-
-Provides seat suggestions
-
-Answers booking queries
-
-📊 Waiting List Prediction
-
-Predicts probability of waiting list confirmation
-
-🧾 Complaint System
-
-Users can register complaints
-
-Track complaint status
-
-👨‍💼 Admin Dashboard
-
-Manage trains and seat layouts
-
-Monitor bookings
-
-Handle complaints
-
-Add Notifications
-
-Assign TT
-
-TT management
-
-🧩 System Modules
-
-1 **User Module**
-
-Handles passenger interaction with the system.
-
-Functions include:
-
-User registration and login
-
-Train search and schedule viewing
-
-Visual seat selection
-
-Ticket booking and cancellation
-
-Booking history
-
-Complaint registration and tracking
-
-2️ **Admin Module**
-
-Allows administrators to manage the system.
-
-Functions include:
-
-Admin authentication
-
-Train management
-
-Seat layout management
-
-Booking monitoring
-
-Complaint resolution
-
-3️ **AI Module**
-
-Enhances the system with intelligent support.
-
-Functions include:
-
-AI chatbot assistance
-
-Seat recommendations
-
-Waiting list prediction
-
-Co-passenger based suggestions
-
-🛠 **Technology Stack**
-
-**Frontend**
-
-• HTML
-
-• CSS
-
- •React
-
-• Tailwind CSS
-
-• Vite
-
-**Backend**
-
-• Node.js
-
-• Express.js
-
-• REST API
-
-**Database**
-
-• Supabase
-
-• PostgreSQL
-
-**Authentication**
-
-Firebase Authentication
-
-
-💻** System Requirements**
-
-**Hardware**
-
-• Laptop or Desktop Computer
-
-• Minimum 4 GB RAM
-
-• Stable Internet Connection
-
-**Software**
-
-• Modern Web Browser (Chrome / Edge / Firefox)
-
-• Node.js
-
-• npm
-
-🗄 Database Design
-
-The system includes the following main database tables:
-| Table      | Description                               |
-| ---------- | ----------------------------------------- |
-| Users      | Stores user account information           |
-| Trains     | Contains train route and schedule details |
-| Coaches    | Coach layout configuration                |
-| Seats      | Seat availability and type                |
-| Bookings   | Ticket booking records                    |
-| Passengers | Passenger details                         |
-| Reviews    | Train comfort reviews                     |
-| Complaints | User complaints and status                |
-| Admin      | Administrator credentials                 |
-
-
-⚙️ Installation & Setup
-1. Clone the Repository
-git clone https://github.com/your-username/smart-rail.git
-2. Navigate to the Project Folder
-cd smart-rail
-3. Install Dependencies
-npm install
-4. Start the Backend Server
-node server.js
-5. Start the Frontend
-npm run dev
+The platform enhances both passenger experience and railway operations by integrating intelligent tools and management features.
