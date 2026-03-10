@@ -1,4 +1,4 @@
-[Live Demo](https://smartrail-26.vercel.app/) | [Visit Site[](https://smartrail-26.vercel.app/)
+[[Live Demo](https://smartrail-26.vercel.app/) | [Visit Site[](https://smartrail-26.vercel.app/)](https://smartrail-26.vercel.app/)
 ![React](https://img.shields.io/badge/Frontend-React-blue)
 ![Node](https://img.shields.io/badge/Backend-Node.js-green)
 ![Rest Api](https://img.shields.io/badge/Database-Supabase-3ECF8E)
