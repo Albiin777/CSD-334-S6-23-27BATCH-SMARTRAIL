@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { auth, db } from '../utils/firebaseClient';
 import { getDoc, doc } from 'firebase/firestore';
 import { syncUserProfile } from '../utils/userProfile';
-import { onAuthStateChanged, updateEmail, verifyBeforeUpdateEmail, signInWithPhoneNumber, PhoneAuthProvider, updatePhoneNumber, signInWithCustomToken } from 'firebase/auth';
+import { onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { User, Mail, Phone, ShieldCheck, Loader2, CheckCircle2, RotateCcw } from 'lucide-react';
 import { API_BASE_URL } from '../api/config';
 
@@ -148,14 +148,18 @@ export default function MyAccount() {
         }
 
         setMessage('');
-        setMessageType('info');
         setIsProcessing(true);
         try {
-            const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone);
-            window._accountPhoneConfirmation = confirmationResult;
-            setIsVerifyingPhone(true);
-            setMessage("OTP sent to " + formattedPhone);
-            startResendCooldown();
+            const currentUser = auth.currentUser;
+            if (!currentUser) throw new Error('Not authenticated.');
+
+            // Directly sync phone to Firestore profile (bypassing reCAPTCHA/SMS verification)
+            await syncUserProfile(currentUser, { phone: formattedPhone });
+            
+            setUser({ ...user, phone: formattedPhone });
+            setIsEditingPhone(false);
+            setMessageType('success');
+            setMessage("Phone number updated successfully.");
         } catch (error) {
             setMessageType('error');
             setMessage(error.message);
@@ -194,41 +198,9 @@ export default function MyAccount() {
                 setIsEditingEmail(false);
 
             } else if (type === 'phone') {
-                const confirmation = window._accountPhoneConfirmation;
-                if (!confirmation) throw new Error('OTP session expired. Please resend.');
-                
-                const currentUser = auth.currentUser;
-                if (!currentUser) throw new Error('Not authenticated.');
-                const phoneCredential = PhoneAuthProvider.credential(confirmation.verificationId, otp);
-                
-                let firebaseLinked = false;
-                try {
-                    await updatePhoneNumber(currentUser, phoneCredential);
-                    firebaseLinked = true;
-                } catch (fbError) {
-                    if (fbError.code === 'auth/credential-already-in-use') {
-                        // Phone already belongs to another Firebase account.
-                        // We'll still save it in Supabase profiles for contact/display purposes.
-                        console.warn('[MyAccount] Phone already linked to another account, saving to profile only.');
-                    } else {
-                        throw fbError; // Re-throw unexpected errors
-                    }
-                }
-
-                // Always sync phone to Firestore profiles regardless of Firebase linking
-                await syncUserProfile(currentUser, { phone: newPhone });
-                setUser({ ...user, phone: newPhone });
+                // This block is no longer used as we save phone directly in handleUpdatePhone
                 setIsEditingPhone(false);
                 setIsVerifyingPhone(false);
-                window._accountPhoneConfirmation = null;
-
-                if (!firebaseLinked) {
-                    setMessageType('info');
-                    setMessage(`Phone number saved to your profile. Note: this number may be used as a login method by another account.`);
-                    setOtp('');
-                    setIsProcessing(false);
-                    return;
-                }
             }
             setMessageType('success');
             setMessage(`${type === 'email' ? 'Email' : 'Phone'} updated successfully.`);
