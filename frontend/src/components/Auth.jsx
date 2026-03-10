@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { supabase } from "../utils/supabaseClient";
 import { auth } from "../utils/firebaseClient";
+import { syncUserProfile } from "../utils/userProfile";
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
@@ -12,7 +12,8 @@ import {
   confirmPasswordReset,
   sendPasswordResetEmail,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  signInWithCustomToken
 } from "firebase/auth";
 import { X, ArrowRight, Loader2, User, Calendar, Phone, Mail, CheckCircle2, Lock, Eye, EyeOff, Timer, ChevronDown } from "lucide-react";
 
@@ -33,6 +34,7 @@ export default function Auth({ onClose }) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [useOtpLogin, setUseOtpLogin] = useState(false); // Only for Login mode
+  const [isEmailOtpFlow, setIsEmailOtpFlow] = useState(false);
 
   // Forgot Password
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
@@ -69,15 +71,32 @@ export default function Auth({ onClose }) {
 
   // Setup Recaptcha once
   useEffect(() => {
-    if (!window.recaptchaVerifier) {
+    // Clear existing verifier if it exists to prevent "already rendered" errors
+    if (window.recaptchaVerifier) {
+      window.recaptchaVerifier.clear();
+      window.recaptchaVerifier = null;
+    }
+
+    try {
       window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-verifier', {
         'size': 'invisible',
         'callback': (response) => {
           // reCAPTCHA solved, allow signInWithPhoneNumber.
         }
       });
+    } catch (err) {
+      console.error("Error initializing RecaptchaVerifier:", err);
     }
+    
+    // Cleanup function
+    return () => {
+      if (window.recaptchaVerifier) {
+        window.recaptchaVerifier.clear();
+        window.recaptchaVerifier = null;
+      }
+    };
   }, []);
+
 
   // Lock body scroll
   useEffect(() => {
@@ -159,11 +178,15 @@ export default function Auth({ onClose }) {
 
     try {
       const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
-      const isMobile = /^[0-9]{10}$/.test(identifier);
       
-      const emailLower = identifier.toLowerCase();
+      // Strip all non-digit characters and take the last 10 digits
+      const cleanedIdentifier = identifier.replace(/\D/g, '').slice(-10);
+      const isMobile = /^[0-9]{10}$/.test(cleanedIdentifier);
+      
+      const emailLower = identifier.trim().toLowerCase();
       
       if (forgotPasswordMode) {
+
         if (!isEmail) throw new Error("Please enter a valid Email to reset password.");
         await sendPasswordResetEmail(auth, emailLower);
         setSuccess(`Password reset link sent to ${emailLower}`);
@@ -173,50 +196,60 @@ export default function Auth({ onClose }) {
 
       if (mode === 'signup') {
         if (!isMobile && !isEmail) throw new Error("Sign up requires a valid Mobile Number or Email.");
-        if (!password || password.length < 6) throw new Error("Password must be at least 6 characters.");
+        // Password is no longer required for email signup since we use OTP
       } else {
-        if (!isEmail && !isMobile) throw new Error("Please enter a valid Email or Mobile Number.");
-        if (!useOtpLogin && !password) throw new Error("Please enter your password.");
+        if (!isMobile && !isEmail) throw new Error("Please enter a valid Email or Mobile Number.");
       }
 
       const isMobileDetected = isMobile;
-      const loginValue = isMobileDetected ? `+91${identifier}` : identifier;
+      const loginValue = isMobileDetected ? `+91${cleanedIdentifier}` : identifier.trim();
 
-      if (mode === 'signup') {
-        if (isEmail) {
-          // Email Signup
-          const userCredential = await createUserWithEmailAndPassword(auth, emailLower, password);
-          // Go to profile immediately if email signup
-          setStep("profile");
-          setSuccess("Account created, please complete your profile.");
-        } else {
-          // Mobile OTP Signup via Firebase
-          const appVerifier = window.recaptchaVerifier;
-          const confirmRes = await signInWithPhoneNumber(auth, loginValue, appVerifier);
-          setConfirmationResult(confirmRes);
-          setStep("otp");
-          setTimer(30);
-          setCanResend(false);
-          setSuccess(`OTP sent to ${loginValue}`);
-        }
-      } else {
-        // LOGIN
-        if (useOtpLogin) {
-          if (!isMobileDetected) throw new Error("OTP Login is only supported for Mobile Numbers.");
-          const appVerifier = window.recaptchaVerifier;
-          const confirmRes = await signInWithPhoneNumber(auth, loginValue, appVerifier);
-          setConfirmationResult(confirmRes);
-          setStep("otp");
-          setTimer(30);
-          setCanResend(false);
-          setSuccess(`OTP sent to ${loginValue}`);
-        } else {
-          // Login via Password
-          if (!isEmail) throw new Error("Password login requires an Email id right now.");
-          const userCredential = await signInWithEmailAndPassword(auth, emailLower, password);
-          finishAuth();
-        }
+      // Pre-check: does this email/phone exist in our profiles table?
+      const checkPayload = isEmail ? { email: emailLower } : { phone: `+91${cleanedIdentifier}` };
+      const checkRes = await fetch('http://localhost:5001/api/auth/check-identifier', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(checkPayload)
+      });
+      const checkData = await checkRes.json();
+      const alreadyExists = checkData.exists;
+
+      if (mode === 'signup' && alreadyExists) {
+        throw new Error(`An account with this ${isEmail ? 'email' : 'phone number'} already exists. Please log in instead.`);
       }
+      if (mode === 'login' && !alreadyExists) {
+        throw new Error(`No account found with this ${isEmail ? 'email' : 'phone number'}. Please sign up first.`);
+      }
+
+      if (isEmail) {
+        // Send Custom Email OTP
+        const response = await fetch('http://localhost:5001/api/auth/send-custom-email-otp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: emailLower })
+        });
+        
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Failed to send email OTP.");
+
+        // We use a custom flag for email OTP to differentiate it from Firebase Phone OTP
+        setIsEmailOtpFlow(true);
+        setStep("otp");
+        setTimer(60); // 60s for email is better
+        setCanResend(false);
+        setSuccess(`Login code sent to ${emailLower}`);
+      } else if (isMobileDetected) {
+        // Mobile OTP Signup/Login via Firebase (Unchanged)
+        setIsEmailOtpFlow(false);
+        const appVerifier = window.recaptchaVerifier;
+        const confirmRes = await signInWithPhoneNumber(auth, loginValue, appVerifier);
+        setConfirmationResult(confirmRes);
+        setStep("otp");
+        setTimer(30);
+        setCanResend(false);
+        setSuccess(`OTP sent to ${loginValue}`);
+      }
+
 
     } catch (err) {
       console.error(err);
@@ -244,22 +277,56 @@ export default function Auth({ onClose }) {
     }
 
     try {
-      if (!confirmationResult) throw new Error("Session expired, please request OTP again.");
-      
-      const result = await confirmationResult.confirm(otpValue);
-      const user = result.user;
+      let user;
 
-      // If Signup Mode -> Go to Profile
-      if (mode === 'signup') {
-        if (!user.displayName) {
-          setStep("profile");
-          setSuccess("Verified! please complete your profile.");
-          setLoading(false);
-          return;
+      if (isEmailOtpFlow) {
+        // Custom Email OTP Flow
+        const emailLower = identifier.trim().toLowerCase();
+        
+        const response = await fetch('http://localhost:5001/api/auth/verify-custom-email-otp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: emailLower, token: otpValue })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || "Failed to verify email OTP.");
         }
+
+        // We got the custom Firebase Token from the backend, log them into the Client SDK!
+        const userCredential = await signInWithCustomToken(auth, data.customToken);
+        user = userCredential.user;
+
+      } else {
+        // Firebase Mobile OTP Flow
+        if (!confirmationResult) throw new Error("Session expired, please request OTP again.");
+        const result = await confirmationResult.confirm(otpValue);
+        user = result.user;
       }
 
-      // Login Mode or Completed Profile -> Finish
+      // Sync basic info to Supabase (creates the row if new)
+      await syncUserProfile(user, user.phoneNumber ? { phone: user.phoneNumber } : { email: user.email });
+
+      // Check if the profile is complete (has full_name). If not, send to profile step.
+      const { supabase } = await import('../utils/supabaseClient');
+      const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.uid)
+          .maybeSingle();
+
+      const profileIsComplete = existingProfile?.full_name;
+
+      if (!profileIsComplete) {
+        setStep("profile");
+        setSuccess("Almost there! Complete your profile to continue.");
+        setLoading(false);
+        return;
+      }
+
+      // Profile is complete -> Finish
       finishAuth();
 
     } catch (err) {
@@ -298,26 +365,64 @@ export default function Auth({ onClose }) {
     }
   };
 
-  // Skip custom Email Verification step for now to respect Firebase flow simpler setup
+  // Real Email OTP Send - for Profile setup step
   const handleVerifyEmail = async () => {
-    // We treat email verification inside Firebase Profile updates later if needed
-    // For now we mock the successful verification in this UI since we skipped actual email code loops
-    setEmailVerificationState({
-      ...emailVerificationState,
-      verified: true,
-      loading: false,
-      sent: false
-    });
-    setSuccess("Email validated for completion!");
+    if (!profile.email) {
+      setError("Please enter an email address first.");
+      return;
+    }
+    const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email);
+    if (!isValidEmail) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    setEmailVerificationState({ ...emailVerificationState, loading: true });
+    setError("");
+    try {
+      const response = await fetch('http://localhost:5001/api/auth/send-custom-email-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: profile.email.toLowerCase() })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to send OTP");
+      setEmailVerificationState({ ...emailVerificationState, sent: true, loading: false });
+      setSuccess(`Verification code sent to ${profile.email}`);
+    } catch (err) {
+      setError(err.message);
+      setEmailVerificationState({ ...emailVerificationState, loading: false });
+    }
   };
 
+  // Real Email OTP Confirm - verify the OTP code entered by user
   const handleConfirmEmailOtp = async () => {
-    handleVerifyEmail();
+    if (!emailVerificationState.code || emailVerificationState.code.length !== 6) {
+      setError("Please enter the 6-digit code from your email.");
+      return;
+    }
+    setEmailVerificationState({ ...emailVerificationState, loading: true });
+    setError("");
+    try {
+      const response = await fetch('http://localhost:5001/api/auth/verify-custom-email-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: profile.email.toLowerCase(), token: emailVerificationState.code })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Invalid OTP");
+      setEmailVerificationState({ code: "", sent: false, verified: true, loading: false });
+      setSuccess("Email verified successfully!");
+    } catch (err) {
+      setError(err.message);
+      setEmailVerificationState({ ...emailVerificationState, loading: false });
+    }
   };
 
   const handleEditEmail = () => {
     setEmailVerificationState({ ...emailVerificationState, sent: false, verified: false, code: "" });
+    setProfile({ ...profile, email: "" }); // Clear the email when editing
     setSuccess("");
+
     setError("");
   };
 
@@ -360,17 +465,13 @@ export default function Auth({ onClose }) {
 
       await updateProfile(currentUser, { displayName: profile.fullName });
 
-      // After Auth Profile update, sync to Supabase generic users table for app usage
-      const { error: sbError } = await supabase.from('users').upsert({
-        id: currentUser.uid,
-        email: profile.email || currentUser.email,
+      // Sync full profile to Supabase (role is only set on first insert)
+      await syncUserProfile(currentUser, {
+        email: profile.email,
         full_name: profile.fullName,
         dob: profile.dob,
         gender: profile.gender,
-        role: 'user'
-      }, { onConflict: 'id' });
-
-      if (sbError) console.error("Error syncing to Supabase", sbError);
+      });
 
       finishAuth();
 
@@ -394,14 +495,8 @@ export default function Auth({ onClose }) {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       
-      // Optionally sync with Supabase here
-      const user = result.user;
-      await supabase.from('users').upsert({
-        id: user.uid,
-        email: user.email,
-        full_name: user.displayName,
-        role: 'user'
-      }, { onConflict: 'id' });
+      // Sync to Supabase (role is only set on first insert)
+      await syncUserProfile(result.user);
 
       finishAuth();
     } catch (err) {
@@ -502,13 +597,15 @@ export default function Auth({ onClose }) {
                         }
                       }
                     }}
-                    placeholder={mode === 'login' ? "Email or Mobile" : "Mobile Number"}
+                    placeholder={mode === 'login' ? "Email or Mobile" : "Mobile Number or Email"}
                     className="w-full pl-12 pr-4 py-4 bg-gray-50 border-2 border-transparent focus:border-[#2B2B2B] focus:bg-white rounded-xl outline-none transition-all font-medium text-[#2B2B2B] placeholder:text-gray-400"
                     autoFocus
                   />
                 </div>
 
+
                 {/* Password Input (Hidden if using OTP login) */}
+
                 {!useOtpLogin && (
                   <div className="relative group animate-in fade-in slide-in-from-top-2">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -580,14 +677,9 @@ export default function Auth({ onClose }) {
                 </button>
               </p>
 
-              <p className="text-[10px] text-gray-400 mt-4">
-                Railway Official?
-                <a href="http://localhost:5174/login" className="ml-1 font-bold text-gray-500 hover:text-[#2B2B2B] hover:underline transition-colors uppercase tracking-wider">
-                  TTE Portal
-                </a>
-              </p>
             </div>
           </form>
+
         )}
 
         {/* STEP 2: OTP */}
@@ -596,16 +688,22 @@ export default function Auth({ onClose }) {
             <div className="text-center">
               <p className="text-sm text-gray-600">
                 Enter the code sent to <br />
-                <span className="font-bold text-[#2B2B2B]">{(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)) ? `+91 ${identifier}` : identifier}</span>
+                <span className="font-bold text-[#2B2B2B]">
+                  {/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier) 
+                    ? identifier 
+                    : (identifier.includes('+91') ? identifier : `+91 ${identifier.replace(/\D/g, '').slice(-10)}`)}
+                </span>
+
               </p>
               <button
                 type="button"
                 onClick={() => { setStep('credentials'); setError(''); }}
                 className="text-[10px] text-blue-600 font-bold mt-2 hover:underline uppercase tracking-widest"
               >
-                Change {(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)) ? 'Number' : 'Email'}
+                Change {/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier) ? 'Email' : 'Number'}
               </button>
             </div>
+
 
             {/* 6 SPLIT INPUTS */}
             <div className="flex justify-between gap-1 sm:gap-2">
@@ -669,8 +767,10 @@ export default function Auth({ onClose }) {
               }
               setLoading(true);
               try {
-                const { error } = await supabase.auth.updateUser({ password: newPassword });
-                if (error) throw error;
+                const currentUser = auth.currentUser;
+                if (!currentUser) throw new Error("No user is currently authenticated to change password.");
+                
+                await updatePassword(currentUser, newPassword);
                 setSuccess("Password updated successfully!");
                 finishAuth();
               } catch (err) {
@@ -932,7 +1032,10 @@ export default function Auth({ onClose }) {
           </form>
         )}
 
+        {/* Hidden recaptcha verifier container */}
+        <div id="recaptcha-verifier"></div>
       </div>
     </div>
   );
 }
+

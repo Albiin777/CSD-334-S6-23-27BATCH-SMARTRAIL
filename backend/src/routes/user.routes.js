@@ -8,7 +8,12 @@ import {
     loginWithPhone,
     resendOTP,
     logout,
-    getProfile
+    getProfile,
+    sendCustomEmailOTP,
+    verifyCustomEmailOTP,
+    verifyCustomEmailUpdateOTP,
+    syncProfile,
+    checkIdentifier
 } from '../controllers/user.controller.js';
 import { authenticateToken } from '../middlewares/auth.middleware.js';
 
@@ -23,5 +28,16 @@ router.post('/login-phone', loginWithPhone);
 router.post('/resend-otp', resendOTP);
 router.post('/logout', authenticateToken, logout);
 router.get('/profile', authenticateToken, getProfile);
+
+// Custom Email OTP Routes
+router.post('/send-custom-email-otp', sendCustomEmailOTP);
+router.post('/verify-custom-email-otp', verifyCustomEmailOTP);
+router.post('/verify-custom-email-update-otp', verifyCustomEmailUpdateOTP);
+
+// Profile Sync (bypasses Supabase RLS using service role)
+router.post('/sync-profile', syncProfile);
+
+// Pre-auth check: does this email/phone exist in profiles?
+router.post('/check-identifier', checkIdentifier);
 
 export default router;

@@ -430,8 +430,8 @@ export default function BookingCard() {
                 </button>
 
                 {showPassengers && (
-                  <div className="absolute left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 bottom-full mb-2 bg-white rounded-xl shadow-lg z-50 border border-[#D4D4D4] min-w-[160px]">
-                    {[1, 2, 3, 4, 5, 6].map((n) => (
+                  <div className="absolute left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 bottom-full mb-2 bg-white rounded-xl shadow-lg z-50 border border-[#D4D4D4] min-w-[160px] max-h-60 overflow-y-auto">
+                    {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
                       <div
                         key={n}
                         onClick={() => {

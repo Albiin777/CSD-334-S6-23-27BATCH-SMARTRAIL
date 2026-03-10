@@ -1,10 +1,13 @@
 import { useSmartRail } from '../hooks/useSmartRail';
-import { BarChart3, TrendingUp, Users, DollarSign } from 'lucide-react';
+import { BarChart3, TrendingUp, Users, AlertTriangle } from 'lucide-react';
 
 export default function Analytics() {
     const { stats, allPassengers: passengers, fines, incidents } = useSmartRail();
     const occPct = stats.totalSeats > 0 ? Math.round((stats.booked / stats.totalSeats) * 100) : 0;
-    const wlConv = 68;
+    // WL conversion: confirmed out of (confirmed + original waitlist who were upgraded)
+    const totalConfirmed = passengers.filter(p => p.status === 'Confirmed').length;
+    const totalWL = passengers.filter(p => p.status === 'Waitlist').length;
+    const wlConv = (totalConfirmed + totalWL) > 0 ? Math.round((totalConfirmed / (totalConfirmed + totalWL)) * 100) : 0;
     const noShowRate = stats.totalPassengers > 0 ? Math.round((stats.noShows / stats.totalPassengers) * 100) : 0;
     const revenue = fines.reduce((s, f) => s + f.amount, 0);
 
@@ -15,21 +18,12 @@ export default function Analytics() {
         { label: 'No-Show Rate', value: `${noShowRate}%`, bar: noShowRate, color: 'bg-red-400' },
     ];
 
-    const stationData = [
-        { station: 'Chennai', boarding: 5, alighting: 0 },
-        { station: 'Vijayawada', boarding: 2, alighting: 1 },
-        { station: 'Nagpur', boarding: 1, alighting: 0 },
-        { station: 'Bhopal', boarding: 1, alighting: 2 },
-        { station: 'Jaipur', boarding: 0, alighting: 3 },
-        { station: 'Delhi', boarding: 0, alighting: 6 },
-    ];
-
     const categories = [
-        { label: 'Senior Citizens', count: passengers.filter(p => p.flags.includes('senior')).length, color: 'text-blue-400' },
-        { label: 'Women', count: passengers.filter(p => p.gender === 'Female').length, color: 'text-pink-400' },
-        { label: 'Medical', count: passengers.filter(p => p.flags.includes('medical')).length, color: 'text-red-400' },
-        { label: 'Pregnant', count: passengers.filter(p => p.flags.includes('pregnant')).length, color: 'text-amber-400' },
-        { label: 'Regular', count: passengers.filter(p => p.flags.length === 0 && p.gender === 'Male').length, color: 'text-[#B3B3B3]' },
+        { label: 'Senior Citizens', count: passengers.filter(p => p.flags?.includes('senior')).length, color: 'text-blue-400' },
+        { label: 'Women', count: passengers.filter(p => p.gender === 'Female' || p.gender === 'F').length, color: 'text-pink-400' },
+        { label: 'Medical', count: passengers.filter(p => p.flags?.includes('medical')).length, color: 'text-red-400' },
+        { label: 'Pregnant', count: passengers.filter(p => p.flags?.includes('pregnant')).length, color: 'text-amber-400' },
+        { label: 'Regular', count: passengers.filter(p => (!p.flags || p.flags.length === 0) && p.gender !== 'Female' && p.gender !== 'F').length, color: 'text-[#B3B3B3]' },
     ];
 
     return (
@@ -48,28 +42,34 @@ export default function Analytics() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Station Boarding Trends */}
+                {/* Boarding Breakdown */}
                 <div className="bg-[#2B2B2B] rounded-2xl border border-[#D4D4D4]/10 p-6">
-                    <h3 className="text-sm font-bold text-[#B3B3B3] uppercase tracking-wider mb-5 flex items-center gap-2"><TrendingUp size={16} /> Station Boarding Trends</h3>
-                    <div className="space-y-3">
-                        {stationData.map(s => (
-                            <div key={s.station} className="flex items-center gap-3">
-                                <span className="text-xs font-semibold text-[#B3B3B3] w-20 shrink-0 truncate">{s.station}</span>
-                                <div className="flex-1 flex gap-1 h-6">
-                                    <div className="bg-emerald-500 rounded-l-lg transition-all duration-500 flex items-center justify-center" style={{ width: `${Math.max(s.boarding * 15, 5)}%` }}>
-                                        {s.boarding > 0 && <span className="text-[9px] font-bold text-white">+{s.boarding}</span>}
+                    <h3 className="text-sm font-bold text-[#B3B3B3] uppercase tracking-wider mb-5 flex items-center gap-2"><TrendingUp size={16} /> Boarding Stations</h3>
+                    {(() => {
+                        const boardingMap = {};
+                        passengers.forEach(p => {
+                            if (p.boarding) boardingMap[p.boarding] = (boardingMap[p.boarding] || 0) + 1;
+                        });
+                        const entries = Object.entries(boardingMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+                        const max = Math.max(...entries.map(([, v]) => v), 1);
+                        return entries.length === 0 ? (
+                            <p className="text-xs text-[#9CA3AF] text-center py-6">No boarding data available</p>
+                        ) : (
+                            <div className="space-y-3">
+                                {entries.map(([station, count]) => (
+                                    <div key={station} className="flex items-center gap-3">
+                                        <span className="text-xs font-semibold text-[#B3B3B3] w-24 shrink-0 truncate">{station}</span>
+                                        <div className="flex-1 h-5 bg-gray-800 rounded-full overflow-hidden">
+                                            <div className="h-full bg-emerald-500 rounded-full flex items-center justify-center transition-all duration-500"
+                                                style={{ width: `${(count / max) * 100}%` }}>
+                                                <span className="text-[9px] font-bold text-white px-1">{count}</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="bg-red-500 rounded-r-lg transition-all duration-500 flex items-center justify-center" style={{ width: `${Math.max(s.alighting * 15, 5)}%` }}>
-                                        {s.alighting > 0 && <span className="text-[9px] font-bold text-white">-{s.alighting}</span>}
-                                    </div>
-                                </div>
+                                ))}
                             </div>
-                        ))}
-                    </div>
-                    <div className="flex gap-4 mt-4 text-[10px] font-bold text-[#9CA3AF]">
-                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500" /> Boarding</span>
-                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500" /> Alighting</span>
-                    </div>
+                        );
+                    })()}
                 </div>
 
                 {/* Passenger Categories */}
@@ -96,11 +96,11 @@ export default function Analytics() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-gray-900 rounded-xl p-4 border border-[#D4D4D4]/5">
                         <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">Blacklisted Found</p>
-                        <p className="text-2xl font-extrabold text-red-400 mt-1">{passengers.filter(p => p.flags.includes('blacklisted')).length}</p>
+                        <p className="text-2xl font-extrabold text-red-400 mt-1">{passengers.filter(p => p.flags?.includes('blacklisted')).length}</p>
                     </div>
                     <div className="bg-gray-900 rounded-xl p-4 border border-[#D4D4D4]/5">
                         <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">Ticketless Caught</p>
-                        <p className="text-2xl font-extrabold text-amber-400 mt-1">{fines.filter(f => f.reason === 'No ticket').length}</p>
+                        <p className="text-2xl font-extrabold text-amber-400 mt-1">{fines.filter(f => f.reason === 'No ticket' || f.reason?.toLowerCase().includes('ticketless')).length}</p>
                     </div>
                     <div className="bg-gray-900 rounded-xl p-4 border border-[#D4D4D4]/5">
                         <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">Total Incidents</p>

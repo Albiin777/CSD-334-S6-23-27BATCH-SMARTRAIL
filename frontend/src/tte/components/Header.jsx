@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Menu, Bell, AlertTriangle, UserX, ShieldAlert, X, LogOut, ChevronDown, User, Train, Clock, MapPin, Database } from 'lucide-react';
 import { useSmartRail } from '../hooks/useSmartRail';
@@ -23,7 +23,19 @@ export default function Header({ onMenuClick }) {
     const { tteInfo, incidents, allPassengers, stats } = useSmartRail();
     const [showNotifs, setShowNotifs] = useState(false);
     const [showProfile, setShowProfile] = useState(false);
+    const profileRef = useRef(null);
+    const notifRef = useRef(null);
     const title = pageTitles[pathname] || 'TTE Command Center';
+
+    // Close dropdowns on outside click
+    useEffect(() => {
+        function handleClickOutside(e) {
+            if (profileRef.current && !profileRef.current.contains(e.target)) setShowProfile(false);
+            if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotifs(false);
+        }
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     const activeIncidents = incidents.filter(i => i.status === 'Active');
     const unverified = allPassengers.filter(p => !p.verified && p.status !== 'No-Show').length;
@@ -54,7 +66,7 @@ export default function Header({ onMenuClick }) {
             <div className="flex items-center gap-2">
 
                 {/* Notification Bell */}
-                <div className="relative">
+                <div className="relative" ref={notifRef}>
                     <button onClick={() => { setShowNotifs(!showNotifs); setShowProfile(false); }} className="relative p-2 rounded-xl text-[#2B2B2B] hover:bg-gray-100 transition">
                         <Bell size={20} />
                         {count > 0 && (
@@ -91,7 +103,7 @@ export default function Header({ onMenuClick }) {
                 </div>
 
                 {/* Profile Dropdown */}
-                <div className="relative ml-1 pl-3 border-l border-[#D4D4D4]">
+                <div className="relative ml-1 pl-3 border-l border-[#D4D4D4]" ref={profileRef}>
                     <button onClick={() => { setShowProfile(!showProfile); setShowNotifs(false); }}
                         className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-gray-100 transition cursor-pointer">
                         <div className="w-8 h-8 rounded-full bg-[#2B2B2B] flex items-center justify-center text-white text-xs font-bold">

@@ -128,11 +128,13 @@ export default function PassengerDetails() {
       state: {
         payload,
         totalAmount,
-        trainName: train.trainName,
+        trainName: actualTrain?.trainName || train.trainName,
         trainNumber: train.trainNumber,
         classType,
         journeyDate,
         passengerCount: passengers.length,
+        isUnreserved: isUnreservedClass,
+        farePerPassenger: farePerPerson
       },
     });
   };
@@ -201,7 +203,7 @@ export default function PassengerDetails() {
                   >−</button>
                   <span className="text-2xl font-bold text-white w-8 text-center">{unreservedCount}</span>
                   <button
-                    onClick={() => setUnreservedCount(c => Math.min(6, c + 1))}
+                    onClick={() => setUnreservedCount(c => Math.min(20, c + 1))}
                     className="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 text-white font-bold flex items-center justify-center transition"
                   >+</button>
                 </div>

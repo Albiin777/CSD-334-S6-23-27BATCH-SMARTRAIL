@@ -133,12 +133,6 @@ function LabelNavbar({ hidden, setHidden }) {
           <span className="absolute left-0 -bottom-1 h-[2px] w-0 bg-[#2B2B2B] transition-all duration-300 group-hover:w-full"></span>
         </button>
 
-
-        <button onClick={goToPnrSection} className={navItem}>
-          PNR Status
-          <span className="absolute left-0 -bottom-1 h-[2px] w-0 bg-[#2B2B2B] transition-all duration-300 group-hover:w-full"></span>
-        </button>
-
         <button onClick={(e) => {
           e.preventDefault();
           if (window.location.pathname !== "/") {
@@ -153,6 +147,11 @@ function LabelNavbar({ hidden, setHidden }) {
           }
         }} className={navItem}>
           Train Schedule
+          <span className="absolute left-0 -bottom-1 h-[2px] w-0 bg-[#2B2B2B] transition-all duration-300 group-hover:w-full"></span>
+        </button>
+
+        <button onClick={goToPnrSection} className={navItem}>
+          PNR Status
           <span className="absolute left-0 -bottom-1 h-[2px] w-0 bg-[#2B2B2B] transition-all duration-300 group-hover:w-full"></span>
         </button>
 

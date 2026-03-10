@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { auth } from '../../utils/firebaseClient';
 
 const SmartRailContext = createContext(null);
 
@@ -52,14 +53,36 @@ const isSideBerth = (num, coachType) => {
     return pos >= (cfg.berthsPerBay - 2);
 };
 
-/* Build seats for a given coach */
-function buildCoachSeats(coachId, coachType, passengerList) {
+/* Build seats for a given coach, using backend layout when available */
+function buildCoachSeats(coachId, coachType, passengerList, backendBerths) {
     const cfg = COACH_CONFIGS[coachType];
-    if (!cfg) return [];
     const coachPassengers = passengerList.filter(p => p.coach === coachId);
-    return Array.from({ length: cfg.berths }, (_, i) => {
+
+    // Determine seat count: backend > COACH_CONFIGS > 0
+    const totalSeats = backendBerths?.length || cfg?.berths || 0;
+    if (totalSeats === 0) return [];
+
+    return Array.from({ length: totalSeats }, (_, i) => {
         const num = i + 1;
         const passenger = coachPassengers.find(p => p.seatNo === num);
+
+        // Berth type: backend data is authoritative; fallback to COACH_CONFIGS calculation
+        const backendBerth = backendBerths?.[i];
+        const berthTypeFull = backendBerth
+            ? (() => {
+                const map = { LB: 'Lower Berth', MB: 'Middle Berth', UB: 'Upper Berth', SL: 'Side Lower', SU: 'Side Upper', W: 'Window', M: 'Middle', A: 'Aisle', SEAT: 'Seat' };
+                return map[backendBerth.berthType] || backendBerth.berthType;
+              })()
+            : getBerthFull(num, coachType);
+        const berthTypeShort = backendBerth?.berthType || getBerthLabel(num, coachType);
+
+        // Bay calculation
+        const berthsPerBay = backendBerths
+            ? (cfg?.berthsPerBay || 8)
+            : (cfg?.berthsPerBay || 8);
+        const bay = Math.ceil(num / berthsPerBay);
+        const isSide = ['SL', 'SU'].includes(berthTypeShort);
+
         let status = 'available';
         if (passenger) {
             if (passenger.status === 'Confirmed') status = 'booked';
@@ -68,10 +91,10 @@ function buildCoachSeats(coachId, coachType, passengerList) {
         }
         return {
             number: num,
-            bay: getBay(num, coachType),
-            type: getBerthFull(num, coachType),
-            typeShort: getBerthLabel(num, coachType),
-            isSide: isSideBerth(num, coachType),
+            bay,
+            type: berthTypeFull,
+            typeShort: berthTypeShort,
+            isSide,
             status,
             passenger: passenger || null,
         };
@@ -97,6 +120,9 @@ export function SmartRailProvider({ children }) {
     const [coaches, setCoaches] = useState([]);
     const [incidents, setIncidents] = useState([]);
     const [fines, setFines] = useState([]);
+    const [reviews, setReviews] = useState([]);
+    const [complaints, setComplaints] = useState([]);
+    const [backendCoachMap, setBackendCoachMap] = useState({}); // coachId → { totalSeats, berths: [{berthType}] }
     const [dataSource, setDataSource] = useState('loading'); // 'supabase' | 'error' | 'loading'
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -128,8 +154,26 @@ export function SmartRailProvider({ children }) {
             }
 
             try {
+                // 0. Fetch TTE's real name from profiles table using Firebase UID
+                let profileName = null;
+                const currentUser = auth.currentUser;
+                if (currentUser?.uid && supabase) {
+                    const { data: profileData } = await supabase
+                        .from('profiles')
+                        .select('full_name, email')
+                        .eq('id', currentUser.uid)
+                        .maybeSingle();
+                    if (profileData?.full_name) {
+                        profileName = profileData.full_name;
+                    }
+                    // Also store email so assignment lookup works
+                    if (profileData?.email && !localStorage.getItem('tteEmail')) {
+                        localStorage.setItem('tteEmail', profileData.email);
+                    }
+                }
+
                 // 1. Find the train dynamically based on Admin Duty Assignment
-                const tteEmail = localStorage.getItem('tteEmail');
+                const tteEmail = localStorage.getItem('tteEmail') || currentUser?.email;
 
                 let assignedTrainNumber = null;
 
@@ -137,7 +181,7 @@ export function SmartRailProvider({ children }) {
                     // Look up duty assignment case-insensitively
                     const { data: assignmentData, error: assignmentErr } = await supabase
                         .from('tte_assignments')
-                        .select('train_no, train_name, source_station, dest_station, tte_name, tte_id')
+                        .select('train_no, train_name, source_station, dest_station, tte_name, tte_id, coach_id')
                         .ilike('tte_email', tteEmail)
                         .ilike('status', 'active')
                         .order('created_at', { ascending: false })
@@ -147,13 +191,18 @@ export function SmartRailProvider({ children }) {
                     if (!assignmentErr && assignmentData) {
                         assignedTrainNumber = assignmentData.train_no;
                         setTteDetails({
-                            name: assignmentData.tte_name,
+                            name: profileName || assignmentData.tte_name,
                             id: assignmentData.tte_id,
                             trainName: assignmentData.train_name,
                             source: assignmentData.source_station,
-                            destination: assignmentData.dest_station
+                            destination: assignmentData.dest_station,
+                            assignedCoachId: assignmentData.coach_id || null,
                         });
+                    } else if (profileName) {
+                        setTteDetails(prev => ({ ...prev, name: profileName }));
                     }
+                } else if (profileName) {
+                    setTteDetails(prev => ({ ...prev, name: profileName }));
                 }
 
                 // Fallback to localStorage or just finding the latest train if no active assignment
@@ -199,8 +248,38 @@ export function SmartRailProvider({ children }) {
                         dbId: c.id,
                     }));
                     setCoaches(mapped);
-                    // Default to first coach
-                    setSelectedCoach(mapped[0]?.id || null);
+
+                    // Default to TTE's assigned coach if available, otherwise first coach
+                    const defaultCoach = tteDetails?.assignedCoachId
+                        ? (mapped.find(c => c.id === tteDetails.assignedCoachId)?.id || mapped[0]?.id)
+                        : mapped[0]?.id;
+                    setSelectedCoach(defaultCoach || null);
+                }
+
+                // Fetch seat layout structure from backend API for this train
+                try {
+                    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+                    const layoutRes = await fetch(`${apiUrl}/trains/${trainData.train_number}/seat-layout`);
+                    if (layoutRes.ok) {
+                        const layoutData = await layoutRes.json();
+                        if (layoutData?.coaches) {
+                            const coachMap = {};
+                            layoutData.coaches.forEach(c => {
+                                const coachId = c.coachId || c.coachNumber;
+                                if (coachId) {
+                                    coachMap[coachId] = {
+                                        classCode: c.classCode,
+                                        totalSeats: c.totalSeats,
+                                        berths: c.seats || [], // [{seatNumber, berthType}]
+                                    };
+                                }
+                            });
+                            setBackendCoachMap(coachMap);
+                            addLog(`Seat layout loaded from backend for ${Object.keys(coachMap).length} coaches`, 'info');
+                        }
+                    }
+                } catch (layoutErr) {
+                    console.warn('Backend seat layout fetch failed, using COACH_CONFIGS fallback:', layoutErr.message);
                 }
 
                 // 3. Load TTE passengers for this train
@@ -274,6 +353,58 @@ export function SmartRailProvider({ children }) {
                     })));
                 }
 
+                // 6. Load reviews for this train
+                const { data: reviewData } = await supabase
+                    .from('reviews')
+                    .select('*')
+                    .eq('train_no', trainData.train_number)
+                    .order('created_at', { ascending: false });
+
+                if (reviewData) {
+                    setReviews(reviewData.map(r => ({
+                        id: r.id,
+                        passenger: r.passenger_name || 'Passenger',
+                        pnr: r.pnr || '',
+                        coach: r.coach || '',
+                        seat: r.seat_no || '',
+                        rating: r.rating || 0,
+                        category: r.category || 'General',
+                        comment: r.comment || '',
+                        date: new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                        helpful: r.helpful_count || 0,
+                    })));
+                }
+
+                // 7. Load complaints for this train
+                const { data: complaintData } = await supabase
+                    .from('complaints')
+                    .select('*, complaint_replies(*)')
+                    .eq('train_no', trainData.train_number)
+                    .order('created_at', { ascending: false });
+
+                if (complaintData) {
+                    setComplaints(complaintData.map(c => ({
+                        id: c.complaint_id || `CMP-${String(c.id).padStart(3, '0')}`,
+                        dbId: c.id,
+                        passenger: c.passenger_name || 'Passenger',
+                        pnr: c.pnr || '',
+                        coach: c.coach || '',
+                        seat: c.seat_no || '',
+                        category: c.category || 'General',
+                        priority: c.priority || 'Medium',
+                        status: c.status || 'Open',
+                        description: c.description || '',
+                        date: new Date(c.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                        time: new Date(c.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                        assignedTo: c.assigned_to || 'TTE',
+                        responses: (c.complaint_replies || []).map(r => ({
+                            by: r.replied_by || 'System',
+                            text: r.reply_text || '',
+                            time: new Date(r.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                        })),
+                    })));
+                }
+
                 setDataSource('supabase');
                 addLog('Connected to Supabase — live data loaded', 'station');
 
@@ -293,7 +424,9 @@ export function SmartRailProvider({ children }) {
     const currentCoachObj = coaches.find(c => c.id === safeCoach) || null;
     const currentCoachType = currentCoachObj?.type || '3A';
     const currentConfig = COACH_CONFIGS[currentCoachType];
-    const seats = buildCoachSeats(safeCoach, currentCoachType, passengers);
+    // Use backend berths if available for the selected coach, otherwise use COACH_CONFIGS
+    const backendBerths = backendCoachMap[safeCoach]?.berths || null;
+    const seats = buildCoachSeats(safeCoach, currentCoachType, passengers, backendBerths);
 
     // Stats for current coach
     const coachPassengers = passengers.filter(p => p.coach === safeCoach);
@@ -319,24 +452,19 @@ export function SmartRailProvider({ children }) {
 
     const tteInfo = {
         name: tteDetails?.name || 'TTE',
-        id: tteDetails?.id || 'TTE1',
-        trainNo: trainDetails?.train_number || localStorage.getItem('tte_train_number') || '12622',
-        trainName: tteDetails?.trainName || trainDetails?.name || 'SmartRail Express',
-        route: `${tteDetails?.source || trainDetails?.source || 'Source'} → ${tteDetails?.destination || trainDetails?.destination || 'Destination'}`,
-        source: tteDetails?.source || trainDetails?.source || 'Station A',
-        destination: tteDetails?.destination || trainDetails?.destination || 'Station B',
+        id: tteDetails?.id || '—',
+        trainNo: trainDetails?.train_number || localStorage.getItem('tte_train_number') || '—',
+        trainName: tteDetails?.trainName || trainDetails?.name || '—',
+        route: `${tteDetails?.source || trainDetails?.source || '—'} → ${tteDetails?.destination || trainDetails?.destination || '—'}`,
+        source: tteDetails?.source || trainDetails?.source || '—',
+        destination: tteDetails?.destination || trainDetails?.destination || '—',
         date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-        departure: trainDetails?.departure_time || '22:00',
-        arrival: trainDetails?.arrival_time || '06:35 +1',
-        duration: '32h 35m',
-        shift: '06:00 — 22:00',
-        coach: safeCoach || 'Loading...',
+        departure: trainDetails?.departure_time || '—',
+        arrival: trainDetails?.arrival_time || '—',
+        shift: tteDetails?.shift || '—',
+        coach: safeCoach || '—',
         coachType: currentCoachType,
         coachLabel: currentCoachObj?.label || (loading ? 'Loading...' : 'No coach'),
-        zone: 'Southern Railway',
-        division: 'Chennai Division',
-        rakeType: 'LHB',
-        pantryAvailable: 'Yes (Coach PC)',
         dataSource,
     };
 
@@ -539,8 +667,10 @@ export function SmartRailProvider({ children }) {
     };
 
     const value = {
-        time, stats, tteInfo, passengers: coachPassengers, allPassengers: passengers, seats, incidents, fines, logs, stationIndex,
-        stations: STATIONS, currentStation: STATIONS[stationIndex],
+        time, stats, tteInfo, passengers: coachPassengers, allPassengers: passengers, seats, incidents, fines,
+        reviews, complaints, setComplaints,
+        backendCoachMap,
+        logs, stationIndex,
         coaches, coachConfigs: COACH_CONFIGS, selectedCoach, setSelectedCoach,
         currentCoachType, currentConfig,
         verifyPassenger, markNoShow, upgradeRAC, addFine, addIncident, nextStation, addLog, issueTicket,

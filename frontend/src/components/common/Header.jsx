@@ -5,7 +5,7 @@ import LabelNavbar from "../LabelNavbar";
 import { auth } from "../../utils/firebaseClient";
 import { signOut } from "firebase/auth";
 
-function Header({ onLoginClick, user: propUser, isAuthLoading }) {
+function Header({ onLoginClick, user: propUser, userRole, isAuthLoading }) {
   const [hidden, setHidden] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef(null);
@@ -20,7 +20,7 @@ function Header({ onLoginClick, user: propUser, isAuthLoading }) {
   };
 
   const isPaymentPage = location.pathname.startsWith('/payment');
-  const hideLabelNavbar = location.pathname.startsWith('/seat-layout') || location.pathname.startsWith('/passenger-details') || isPaymentPage;
+  const hideLabelNavbar = location.pathname.startsWith('/seat-layout') || location.pathname.startsWith('/passenger-details') || isPaymentPage || userRole === 'tte';
 
   // Sync prop user to local name for UI
   const displayName = getDisplayName(propUser);
@@ -36,7 +36,7 @@ function Header({ onLoginClick, user: propUser, isAuthLoading }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  if (isPaymentPage) {
+  if (isPaymentPage || userRole === 'tte') {
     return null;
   }
 
@@ -107,6 +107,29 @@ function Header({ onLoginClick, user: propUser, isAuthLoading }) {
                 >
                   My Account
                 </button>
+                {/* Admin/TTE Links based on role */}
+                {userRole === 'admin' && (
+                  <button
+                    onClick={() => {
+                      navigate('/admin');
+                      setShowDropdown(false);
+                    }}
+                    className="w-full text-left px-4 py-2 text-blue-600 dark:text-blue-400 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                  >
+                    Admin Dashboard
+                  </button>
+                )}
+                {userRole === 'tte' && (
+                  <button
+                    onClick={() => {
+                      navigate('/tte');
+                      setShowDropdown(false);
+                    }}
+                    className="w-full text-left px-4 py-2 text-green-600 dark:text-green-400 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                  >
+                    TTE Portal
+                  </button>
+                )}
                 <button
                   onClick={handleLogout}
                   className="w-full text-left px-4 py-2 text-[#2B2B2B] dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition"

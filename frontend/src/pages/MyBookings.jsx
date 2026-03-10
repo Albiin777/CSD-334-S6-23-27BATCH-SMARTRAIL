@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabaseClient';
+import { auth } from '../utils/firebaseClient';
+import { onAuthStateChanged } from 'firebase/auth';
 import { Train, Calendar, MapPin, Search, ArrowRight, Loader2, Ticket, ShieldCheck, Home } from 'lucide-react';
 import QRCode from "react-qr-code";
 
@@ -12,19 +14,14 @@ export default function MyBookings() {
     const navigate = useNavigate();
 
     useEffect(() => {
-        const fetchHistory = async () => {
+        let mounted = true;
+
+        const fetchHistory = async (currentUser) => {
+            if (!currentUser || !mounted) return;
+
             try {
-                const { data: { session } } = await supabase.auth.getSession();
+                const token = await currentUser.getIdToken();
                 
-                if (!session) {
-                    setUser(null);
-                    setIsLoading(false);
-                    return;
-                }
-
-                setUser(session.user);
-                const token = session.access_token;
-
                 const res = await fetch('http://localhost:5001/api/bookings/history', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -35,16 +32,30 @@ export default function MyBookings() {
                 }
                 
                 const data = await res.json();
-                setBookings(data);
+                if (mounted) setBookings(data);
             } catch (err) {
                 console.error(err);
-                setError(err.message);
+                if (mounted) setError(err.message);
             } finally {
-                setIsLoading(false);
+                if (mounted) setIsLoading(false);
             }
         };
 
-        fetchHistory();
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            if (currentUser) {
+                setUser(currentUser);
+                fetchHistory(currentUser);
+            } else if (mounted) {
+                setUser(null);
+                setBookings([]);
+                setIsLoading(false);
+            }
+        });
+
+        return () => {
+            mounted = false;
+            unsubscribe();
+        };
     }, []);
 
     if (isLoading) {

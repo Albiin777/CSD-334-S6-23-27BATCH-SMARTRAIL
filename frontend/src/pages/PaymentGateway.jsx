@@ -82,11 +82,11 @@ export default function PaymentGateway() {
     const passengerCount = state.passengerCount;
 
     // Calculate unreserved fares dynamically, or just grab the payload params
-    const baseFare = isUnreserved ? state.farePerPassenger : 500;
+    const baseFare = isUnreserved ? (state.farePerPassenger || 50) : 500;
     const ticketFareTotal = passengerCount * baseFare;
     const serviceCharge = 20;
     const gstTotal = Math.round(ticketFareTotal * 0.05);
-    const totalAmount = isUnreserved ? (ticketFareTotal + serviceCharge + gstTotal) : state.totalAmount;
+    const totalAmount = state.totalAmount || (isUnreserved ? (ticketFareTotal + serviceCharge + gstTotal) : 0);
 
     const payload = isUnreserved ? {
         trainNumber,
@@ -130,7 +130,9 @@ export default function PaymentGateway() {
             if (isUnreserved) {
                 const unreservedRes = await api.bookUnreserved(payload);
                 // Create a fallback PNR ID for the UI using the database UUID
-                result = { pnr: 'UR-' + unreservedRes.ticket.id.split('-')[0].toUpperCase(), ...unreservedRes.ticket };
+                const ticketId = unreservedRes?.ticket?.id || Math.random().toString(36).substring(2, 10);
+                const pnrPrefix = 'UR-' + ticketId.split('-')[0].toUpperCase();
+                result = { pnr: pnrPrefix, ...(unreservedRes?.ticket || {}) };
             } else {
                 result = await api.createBooking(payload);
             }

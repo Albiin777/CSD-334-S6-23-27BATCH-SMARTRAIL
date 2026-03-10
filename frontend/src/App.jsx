@@ -41,7 +41,8 @@ import MyBookings from "./pages/MyBookings";
 import AboutSection from "./components/AboutSection";
 
 import { supabase } from "./utils/supabaseClient";
-
+import { auth } from "./utils/firebaseClient";
+import { onAuthStateChanged } from "firebase/auth";
 /* ==================== Icon Components ==================== */
 function SearchIcon({ size = 20, className = "" }) {
   return (
@@ -172,6 +173,7 @@ export default function App() {
   const [hidden, setHidden] = useState(false);
 
   const [user, setUser] = useState(null);
+  const [userRole, setUserRole] = useState(null); // Added role state
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
 
@@ -242,17 +244,17 @@ export default function App() {
       if (currentUser) {
         setUser(currentUser);
 
-        // Fetch user document from Supabase to check role (since role isn't natively in Firebase Auth)
-        // Adjust the query based on your actual users table schema
-        let userRole = null;
+        // Fetch user role from Supabase Profiles (target table switched)
+        let role = null;
         try {
           const { data: profile } = await supabase
-             .from('users') // Example table name
+             .from('profiles')
              .select('role')
-             .eq('email', currentUser.email)
+             .eq('id', currentUser.uid)
              .single();
           
-          userRole = profile?.role;
+          role = profile?.role;
+          setUserRole(role);
         } catch (error) {
           console.log("Error fetching user role from Supabase:", error);
         }
@@ -263,15 +265,23 @@ export default function App() {
 
         // If newly signed in within this listener...
         // Navigate based on roles derived from email or the Supabase fetch
-        if (validAdmins.includes(email) || userRole === 'admin') {
+        // IMPORTANT: Only redirect away from login/signup if the profile is reasonably complete (has a displayName)
+        // Otherwise, let Auth.jsx handle the 'profile' completion step first.
+        if ((validAdmins.includes(email) || role === 'admin') && !location.pathname.startsWith('/admin')) {
           navigate('/admin');
-        } else if (validTtes.includes(email) || email.includes('tte') || userRole === 'tte') {
+        } else if ((validTtes.includes(email) || email.includes('tte') || role === 'tte') && !location.pathname.startsWith('/tte')) {
           navigate('/tte');
-        } else if (location.pathname === '/login' || location.pathname === '/signup') {
+        } else if ((location.pathname === '/login' || location.pathname === '/signup') && currentUser.displayName) {
            navigate('/');
         }
       } else {
         setUser(null);
+        setUserRole(null);
+        // If logged out and on a protected route, redirect to home
+        const protectedRoutes = ['/my-account', '/my-bookings', '/admin', '/tte'];
+        if (protectedRoutes.some(route => location.pathname.startsWith(route))) {
+          navigate('/');
+        }
       }
     });
 
@@ -291,9 +301,11 @@ export default function App() {
     // 3. Removed global reload redirect so that specific pages can handle their own recovery / session storage via React Router state.
   }, []);
 
+  const isTTEPage = location.pathname.startsWith('/tte');
+
   return (
     <div className="min-h-screen flex flex-col bg-[#0f172a] relative">
-      <Header user={user} isAuthLoading={isAuthLoading} onLoginClick={() => setIsAuthOpen(true)} />
+      <Header user={user} userRole={userRole} isAuthLoading={isAuthLoading} onLoginClick={() => setIsAuthOpen(true)} />
 
       {isAuthOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -301,64 +313,73 @@ export default function App() {
         </div>
       )}
 
-      <div className={`min-h-screen flex flex-col ${isMiniFooterPage ? '' : 'pt-[70px]'}`}>
-        <main className="flex-grow">
+      {isTTEPage ? (
+        // TTE portal: full-screen, no wrapper padding, with MiniFooter
+        <>
           <Routes>
-            <Route
-              path="/"
-              element={
-                <>
-                  <Hero />
-                  <BookingCard />
-                  <TrainSchedule />
-                  <div id="pnr-section" className="scroll-mt-[140px]">
-                    <Pnrstatus />
-                  </div>
-                  <div id="reviews-section" className="scroll-mt-[140px]">
-                    <Reviews />
-                  </div>
-                  <Support autoScroll={false} />
-                  <div id="about-section" className="scroll-mt-[120px]">
-                    <AboutSection />
-                  </div>
-                </>
-              }
-            />
-
-            <Route path="/results" element={<Results />} />
-            <Route path="/seat-layout/:trainNumber/:classType" element={<SeatLayout />} />
-            <Route path="/passenger-details" element={<PassengerDetails />} />
-            <Route path="/payment" element={<PaymentGateway />} />
-            <Route path="/notifications" element={<AllNotifications />} />
-            <Route path="/my-account" element={<MyAccount />} /> {/* Added new route */}
-            <Route path="/my-bookings" element={<MyBookings />} /> {/* Added new route */}
-
-            {/* TTE Route */}
-              <Route path="/tte/*" element={<TTEPage />} />
-            {/* --- Admin Portal (Nested Routes) --- */}
-            <Route path="/admin" element={
-              <AdminProtectedRoute>
-                <AdminLayout />
-              </AdminProtectedRoute>
-            }>
-              <Route index element={<AdminDashboard />} />
-              <Route path="trains" element={<TrainManagement />} />
-              <Route path="seats" element={<SeatManagement />} />
-              <Route path="stations" element={<StationManagement />} />
-              <Route path="ttes" element={<TteManagement />} />
-              <Route path="assignments" element={<DutyAssignments />} />
-              <Route path="fares" element={<FareEditor />} />
-              <Route path="complaints" element={<AdminComplaints />} />
-              <Route path="notifications" element={<AdminNotifications />} />
-              <Route path="schedules" element={<ScheduleManagement />} />
-              <Route path="reports" element={<AdminReports />} />
-              <Route path="train/:trainNumber" element={<AdminTrainView />} />
-            </Route>
+            <Route path="/tte/*" element={<TTEPage />} />
           </Routes>
-        </main>
-      </div>
+          <MiniFooter />
+        </>
+      ) : (
+        <>
+          <div className={`min-h-screen flex flex-col ${isMiniFooterPage ? '' : 'pt-[70px]'}`}>
+            <main className="flex-grow">
+              <Routes>
+                <Route
+                  path="/"
+                  element={
+                    <>
+                      <Hero />
+                      <BookingCard />
+                      <TrainSchedule />
+                      <div id="pnr-section" className="scroll-mt-[140px]">
+                        <Pnrstatus />
+                      </div>
+                      <div id="reviews-section" className="scroll-mt-[140px]">
+                        <Reviews />
+                      </div>
+                      <Support autoScroll={false} />
+                      <div id="about-section" className="scroll-mt-[120px]">
+                        <AboutSection />
+                      </div>
+                    </>
+                  }
+                />
 
-      {isMiniFooterPage ? <MiniFooter /> : <Footer />}
+                <Route path="/results" element={<Results />} />
+                <Route path="/seat-layout/:trainNumber/:classType" element={<SeatLayout />} />
+                <Route path="/passenger-details" element={<PassengerDetails />} />
+                <Route path="/payment" element={<PaymentGateway />} />
+                <Route path="/notifications" element={<AllNotifications />} />
+                <Route path="/my-account" element={<MyAccount />} />
+                <Route path="/my-bookings" element={<MyBookings />} />
+
+                {/* Admin Portal */}
+                <Route path="/admin" element={
+                  <AdminProtectedRoute>
+                    <AdminLayout />
+                  </AdminProtectedRoute>
+                }>
+                  <Route index element={<AdminDashboard />} />
+                  <Route path="trains" element={<TrainManagement />} />
+                  <Route path="seats" element={<SeatManagement />} />
+                  <Route path="stations" element={<StationManagement />} />
+                  <Route path="ttes" element={<TteManagement />} />
+                  <Route path="assignments" element={<DutyAssignments />} />
+                  <Route path="fares" element={<FareEditor />} />
+                  <Route path="complaints" element={<AdminComplaints />} />
+                  <Route path="notifications" element={<AdminNotifications />} />
+                  <Route path="schedules" element={<ScheduleManagement />} />
+                  <Route path="reports" element={<AdminReports />} />
+                  <Route path="train/:trainNumber" element={<AdminTrainView />} />
+                </Route>
+              </Routes>
+            </main>
+          </div>
+          {isMiniFooterPage ? <MiniFooter /> : <Footer />}
+        </>
+      )}
     </div>
   );
 }

@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../utils/supabaseClient';
+import { auth } from '../utils/firebaseClient';
+import { syncUserProfile } from '../utils/userProfile';
+import { onAuthStateChanged, updateEmail, verifyBeforeUpdateEmail, RecaptchaVerifier, signInWithPhoneNumber, PhoneAuthProvider, updatePhoneNumber, signInWithCustomToken } from 'firebase/auth';
 import { User, Mail, Phone, ShieldCheck, Loader2, CheckCircle2, RotateCcw } from 'lucide-react';
 
 export default function MyAccount() {
@@ -25,43 +28,49 @@ export default function MyAccount() {
     useEffect(() => {
         let mounted = true;
 
-        const loadUserData = (currentUser) => {
+        const loadUserData = async (currentUser) => {
             if (!currentUser || !mounted) return;
-            setUser({
-                id: currentUser.id,
-                email: currentUser.email,
-                phone: currentUser.phone || '',
-                name: currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0],
-                provider: currentUser.app_metadata?.provider || 'mobile' 
-            });
-            setNewEmail(currentUser.email || '');
-            setNewPhone(currentUser.phone || '+91');
-        };
-
-        const fetchUser = async () => {
+            
+            // Fetch extra profile data (like phone) from Supabase, since Firebase email/password users
+            // don't have phoneNumber set in Firebase Auth - it's stored in our Supabase users table.
+            let phone = currentUser.phoneNumber || '';
+            let fullName = currentUser.displayName || currentUser.email?.split('@')[0];
+            let email = currentUser.email || '';
             try {
-                const { data: { session } } = await supabase.auth.getSession();
-                
-                if (session?.user) {
-                    loadUserData(session.user);
-                } else {
-                    const { data: { user } } = await supabase.auth.getUser();
-                    if (user) loadUserData(user);
+                const { data: profile, error: profileError } = await supabase
+                    .from('profiles')
+                    .select('phone, full_name, email, dob, gender')
+                    .eq('id', currentUser.uid)
+                    .single();
+                if (profileError) {
+                    console.warn('[MyAccount] Profile fetch error:', profileError.message);
+                }
+                if (profile) {
+                    phone = profile.phone || phone;
+                    fullName = profile.full_name || fullName;
+                    email = profile.email || email;
                 }
             } catch (err) {
-                console.error("Error fetching user", err);
-            } finally {
-                if (mounted) setIsLoading(false);
+                console.warn('[MyAccount] Could not load profile from Supabase:', err);
             }
+            
+            if (!mounted) return;
+            setUser({
+                id: currentUser.uid,
+                email: email,
+                phone,
+                name: fullName,
+                provider: currentUser.providerData?.[0]?.providerId || 'mobile'
+            });
+            setNewEmail(email || '');
+            setNewPhone(phone || '+91');
         };
 
-        fetchUser();
-
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            if (session?.user) {
-                loadUserData(session.user);
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            if (currentUser) {
+                loadUserData(currentUser);
                 if (mounted) setIsLoading(false);
-            } else if (!session && mounted) {
+            } else if (mounted) {
                 setUser(null);
                 setIsLoading(false);
             }
@@ -69,7 +78,7 @@ export default function MyAccount() {
 
         return () => {
             mounted = false;
-            subscription?.unsubscribe();
+            unsubscribe();
         };
     }, []);
 
@@ -90,23 +99,35 @@ export default function MyAccount() {
     const handleUpdateEmail = async (e) => {
         if (e) e.preventDefault();
 
-        // Check if the user entered the same email
-        if (newEmail.toLowerCase().trim() === user?.email?.toLowerCase().trim()) {
+        const trimmedEmail = newEmail.toLowerCase().trim();
+        if (trimmedEmail === user?.email?.toLowerCase().trim()) {
             setIsEditingEmail(false);
             setMessage("You are already using this email address.");
             setMessageType('error');
             return;
         }
 
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+            setMessage("Please enter a valid email address.");
+            setMessageType('error');
+            return;
+        }
+
         setMessage('');
-        setMessageType('info');
         setIsProcessing(true);
         try {
-            const { error } = await supabase.auth.updateUser({ email: newEmail });
-            if (error) throw error;
+            // Send OTP to the NEW email using our custom backend
+            const response = await fetch('http://localhost:5001/api/auth/send-custom-email-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: trimmedEmail })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Failed to send OTP");
+
             setIsVerifyingEmail(true);
-            setMessage("Verification required. Enter the OTP sent to your new email.");
-            startResendCooldown();
+            setMessageType('info');
+            setMessage(`A 6-digit code has been sent to ${trimmedEmail}. Enter it below.`);
         } catch (error) {
             setMessageType('error');
             setMessage(error.message);
@@ -134,16 +155,22 @@ export default function MyAccount() {
         setMessage('');
         setMessageType('info');
         setIsProcessing(true);
-
         try {
-            const { error } = await supabase.auth.updateUser({ phone: formattedPhone });
-            if (error) throw error;
+            if (!window.accountRecaptchaVerifier) {
+                window.accountRecaptchaVerifier = new RecaptchaVerifier(auth, 'account-recaptcha-verifier', { 'size': 'invisible' });
+            }
+            const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, window.accountRecaptchaVerifier);
+            window._accountPhoneConfirmation = confirmationResult;
             setIsVerifyingPhone(true);
-            setMessage("Verification OTP sent to " + formattedPhone);
+            setMessage("OTP sent to " + formattedPhone);
             startResendCooldown();
         } catch (error) {
             setMessageType('error');
             setMessage(error.message);
+            if (window.accountRecaptchaVerifier) {
+                window.accountRecaptchaVerifier.clear();
+                window.accountRecaptchaVerifier = null;
+            }
         } finally {
             setIsProcessing(false);
         }
@@ -154,33 +181,79 @@ export default function MyAccount() {
         setMessageType('info');
         setIsProcessing(true);
         try {
-            const verifyParams = {
-                token: otp,
-                type: type === 'email' ? 'email_change' : 'phone_change',
-            };
-            
-            if (type === 'email') verifyParams.email = newEmail;
-            else verifyParams.phone = newPhone;
-
-            const { error } = await supabase.auth.verifyOtp(verifyParams);
-            if (error) throw error;
-
-            setMessageType('success');
-            setMessage(`${type === 'email' ? 'Email' : 'Phone'} updated successfully.`);
-            
             if (type === 'email') {
-                setUser({ ...user, email: newEmail });
-                setIsEditingEmail(false);
+                const trimmedEmail = newEmail.toLowerCase().trim();
+                const currentUser = auth.currentUser;
+                if (!currentUser) throw new Error('Not authenticated.');
+
+                const response = await fetch('http://localhost:5001/api/auth/verify-custom-email-update-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: trimmedEmail, token: otp, uid: currentUser.uid })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to verify OTP');
+
+                // Re-authenticate with the fresh custom token so the session stays alive
+                // (Firebase revokes existing tokens when email changes via Admin SDK)
+                if (data.customToken) {
+                    await signInWithCustomToken(auth, data.customToken);
+                }
+
+                // Update local state
+                setUser({ ...user, email: trimmedEmail });
                 setIsVerifyingEmail(false);
-            } else {
+                setIsEditingEmail(false);
+
+            } else if (type === 'phone') {
+                const confirmation = window._accountPhoneConfirmation;
+                if (!confirmation) throw new Error('OTP session expired. Please resend.');
+                
+                const currentUser = auth.currentUser;
+                if (!currentUser) throw new Error('Not authenticated.');
+                const phoneCredential = PhoneAuthProvider.credential(confirmation.verificationId, otp);
+                
+                let firebaseLinked = false;
+                try {
+                    await updatePhoneNumber(currentUser, phoneCredential);
+                    firebaseLinked = true;
+                } catch (fbError) {
+                    if (fbError.code === 'auth/credential-already-in-use') {
+                        // Phone already belongs to another Firebase account.
+                        // We'll still save it in Supabase profiles for contact/display purposes.
+                        console.warn('[MyAccount] Phone already linked to another account, saving to profile only.');
+                    } else {
+                        throw fbError; // Re-throw unexpected errors
+                    }
+                }
+
+                // Always sync phone to Supabase profiles regardless of Firebase linking
+                await syncUserProfile(currentUser, { phone: newPhone });
                 setUser({ ...user, phone: newPhone });
                 setIsEditingPhone(false);
                 setIsVerifyingPhone(false);
+                window._accountPhoneConfirmation = null;
+
+                if (!firebaseLinked) {
+                    setMessageType('info');
+                    setMessage(`Phone number saved to your profile. Note: this number may be used as a login method by another account.`);
+                    setOtp('');
+                    setIsProcessing(false);
+                    return;
+                }
             }
+            setMessageType('success');
+            setMessage(`${type === 'email' ? 'Email' : 'Phone'} updated successfully.`);
             setOtp('');
         } catch (error) {
             setMessageType('error');
-            setMessage(error.message);
+            if (error.code === 'auth/invalid-verification-code') {
+                setMessage('The OTP code is incorrect or has expired. Please try again.');
+            } else if (error.code === 'auth/requires-recent-login') {
+                setMessage('For security, please sign out and sign back in before changing your phone number.');
+            } else {
+                setMessage(error.message);
+            }
         } finally {
             setIsProcessing(false);
         }
@@ -215,6 +288,8 @@ export default function MyAccount() {
 
     return (
         <div className="min-h-screen pt-36 pb-20 px-4 sm:px-8 bg-gray-900 text-white font-sans">
+            {/* Hidden div for Firebase RecaptchaVerifier (used for phone number update) */}
+            <div id="account-recaptcha-verifier" style={{ display: 'none' }}></div>
             <div className="max-w-5xl mx-auto">
                 <div className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                     <div>
