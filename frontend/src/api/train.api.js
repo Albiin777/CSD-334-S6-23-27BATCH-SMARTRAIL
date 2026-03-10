@@ -86,8 +86,11 @@ const api = {
     },
 
     // Get Booked Seats List for a specific train and date
-    getBookedSeats: async (trainNumber, date) => {
-        const res = await fetch(`${API_BASE_URL}/bookings/booked-seats?trainNumber=${trainNumber}&date=${date}`);
+    getBookedSeats: async (trainNumber, date, source = '', destination = '') => {
+        let url = `${API_BASE_URL}/bookings/booked-seats?trainNumber=${trainNumber}&date=${date}`;
+        if (source) url += `&source=${encodeURIComponent(source)}`;
+        if (destination) url += `&destination=${encodeURIComponent(destination)}`;
+        const res = await fetch(url);
         if (!res.ok) throw new Error('Failed to fetch booked seats');
         return await res.json();
     },

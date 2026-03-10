@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { auth, db } from '../utils/firebaseClient';
 import { getDoc, doc } from 'firebase/firestore';
 import { syncUserProfile } from '../utils/userProfile';
-import { onAuthStateChanged, updateEmail, verifyBeforeUpdateEmail, RecaptchaVerifier, signInWithPhoneNumber, PhoneAuthProvider, updatePhoneNumber, signInWithCustomToken } from 'firebase/auth';
+import { onAuthStateChanged, updateEmail, verifyBeforeUpdateEmail, signInWithPhoneNumber, PhoneAuthProvider, updatePhoneNumber, signInWithCustomToken } from 'firebase/auth';
 import { User, Mail, Phone, ShieldCheck, Loader2, CheckCircle2, RotateCcw } from 'lucide-react';
 import { API_BASE_URL } from '../api/config';
 
@@ -151,10 +151,7 @@ export default function MyAccount() {
         setMessageType('info');
         setIsProcessing(true);
         try {
-            if (!window.accountRecaptchaVerifier) {
-                window.accountRecaptchaVerifier = new RecaptchaVerifier(auth, 'account-recaptcha-verifier', { 'size': 'invisible' });
-            }
-            const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, window.accountRecaptchaVerifier);
+            const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone);
             window._accountPhoneConfirmation = confirmationResult;
             setIsVerifyingPhone(true);
             setMessage("OTP sent to " + formattedPhone);
@@ -162,10 +159,6 @@ export default function MyAccount() {
         } catch (error) {
             setMessageType('error');
             setMessage(error.message);
-            if (window.accountRecaptchaVerifier) {
-                window.accountRecaptchaVerifier.clear();
-                window.accountRecaptchaVerifier = null;
-            }
         } finally {
             setIsProcessing(false);
         }
@@ -284,9 +277,7 @@ export default function MyAccount() {
     return (
         <div className="min-h-screen pt-36 pb-20 px-4 sm:px-8 bg-gray-900 text-white font-sans">
 
-            {/* Hidden div for Firebase RecaptchaVerifier (used for phone number update) */}
-            <div id="account-recaptcha-verifier" style={{ display: 'none' }}></div>
-            <div className="max-w-5xl mx-auto">
+        <div className="max-w-5xl mx-auto">
                 <div className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight mb-2">Account Settings</h1>

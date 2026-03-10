@@ -99,12 +99,13 @@ const getBookingStatusHandler = async (req, res) => {
 
 const getBookedSeatsHandler = async (req, res) => {
     try {
-        const { trainNumber, date } = req.query;
+        const { trainNumber, date, source, destination } = req.query;
         if (!trainNumber || !date) return res.status(400).json({ error: "Missing trainNumber or date" });
 
-        const bookedIds = await bookingService.getBookedSeatsList(trainNumber, date);
+        const bookedIds = await bookingService.getBookedSeatsList(trainNumber, date, source, destination);
         res.status(200).json({ success: true, bookedSeats: bookedIds });
     } catch (err) {
+        console.error("Get Booked Seats Error:", err);
         res.status(500).json({ error: err.message });
     }
 };

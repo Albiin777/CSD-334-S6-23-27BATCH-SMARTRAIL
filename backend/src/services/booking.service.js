@@ -1,4 +1,5 @@
 import { adminDb } from '../config/firebaseAdmin.js';
+import { dataStore } from '../../data/dataLoader.js';
 // PNR Generation Logic
 // Format: 10 Digits
 // First 3: Zone Code (System)
@@ -422,7 +423,7 @@ const getBookingStatus = async (pnr) => {
 // ---------------------------------------------
 // Get Booked Seats List (for Seat Layout View)
 // ---------------------------------------------
-const getBookedSeatsList = async (trainNumber, journeyDate) => {
+const getBookedSeatsList = async (trainNumber, journeyDate, source = null, destination = null) => {
     // 1. Fetch all bookings for this train and date
     const snapshot = await adminDb.collection('pnr_bookings')
         .where('trainNumber', '==', String(trainNumber))
@@ -441,12 +442,30 @@ const getBookedSeatsList = async (trainNumber, journeyDate) => {
 
     const blockedSeats = blockSnapshot.docs.map(doc => doc.data());
 
-    // 3. Extract seat numbers -> 'coachId-seatNumber'
+    // 3. Extract seat numbers
     const unavailableSeatIds = new Set();
     
+    // Resolve station indexes if segment info provided
+    let fromIdx = -1;
+    let toIdx = 999; // Default to whole route if stations not found
+    
+    if (source && destination) {
+        const train = dataStore.trains.find(t => t.trainNumber === String(trainNumber));
+        if (train && train.schedule) {
+            fromIdx = getStationIndex(train.schedule, (source.match(/\(([^)]+)\)$/)?.[1] || source));
+            toIdx = getStationIndex(train.schedule, (destination.match(/\(([^)]+)\)$/)?.[1] || destination));
+        }
+    }
+
     // Confirmed bookings (within passengers array)
     bookings.forEach(booking => {
-        if (booking.passengers) {
+        // If stations provided, only mark as unavailable if segments overlap
+        let overlap = true;
+        if (fromIdx !== -1 && toIdx !== 999 && booking.fromIndex !== undefined && booking.toIndex !== undefined) {
+            overlap = doSegmentsOverlap(fromIdx, toIdx, booking.fromIndex, booking.toIndex);
+        }
+
+        if (overlap && booking.passengers) {
             booking.passengers.forEach(p => {
                 if (p.status === 'CNF' && p.seatNumber) {
                     unavailableSeatIds.add(p.seatNumber);
@@ -455,7 +474,7 @@ const getBookedSeatsList = async (trainNumber, journeyDate) => {
         }
     });
 
-    // Temporary blocks
+    // Temporary blocks (simplified, usually assume overlap for blocks to be safe)
     blockedSeats.forEach(b => {
         unavailableSeatIds.add(b.seat_id);
     });

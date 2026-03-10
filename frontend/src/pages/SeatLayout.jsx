@@ -142,8 +142,8 @@ export default function SeatLayout() {
                 // Fetch actual bookings to gray out unavailable seats
                 let bookedSeatIds = [];
                 try {
-                    if (isTrainSearchMode) {
-                        const bookingRes = await api.getBookedSeats(trainNumber, journeyDate);
+                    if (!isTrainSearchMode) {
+                        const bookingRes = await api.getBookedSeats(trainNumber, journeyDate, source, destination);
                         if (bookingRes?.bookedSeats) {
                             bookedSeatIds = bookingRes.bookedSeats;
                         }

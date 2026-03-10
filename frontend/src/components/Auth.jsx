@@ -5,7 +5,6 @@ import { syncUserProfile } from "../utils/userProfile";
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  RecaptchaVerifier,
   signInWithPhoneNumber,
   updatePassword,
   updateProfile,
@@ -29,7 +28,6 @@ export default function Auth({ onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [dobError, setDobError] = useState("");
 
   // Data
   const [identifier, setIdentifier] = useState(""); // Email or Phone
@@ -48,15 +46,12 @@ export default function Auth({ onClose }) {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const otpRefs = useRef([]);
   const passwordInputRef = useRef(null);
-  const dateInputRef = useRef(null);
 
   const [confirmationResult, setConfirmationResult] = useState(null);
 
   // Data
   const [profile, setProfile] = useState({
     fullName: "",
-    dob: "",
-    gender: "",
     email: ""
   });
 
@@ -69,33 +64,6 @@ export default function Auth({ onClose }) {
 
   // Timer
   const [timer, setTimer] = useState(30);
-  const [canResend, setCanResend] = useState(false);  // Setup Recaptcha once
-  useEffect(() => {
-    // Clear existing verifier if it exists to prevent "already rendered" errors
-    if (window.recaptchaVerifier) {
-      window.recaptchaVerifier.clear();
-      window.recaptchaVerifier = null;
-    }
-
-    try {
-      window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-verifier', {
-        'size': 'invisible',
-        'callback': (response) => {
-          // reCAPTCHA solved, allow signInWithPhoneNumber.
-        }
-      });
-    } catch (err) {
-      console.error("Error initializing RecaptchaVerifier:", err);
-    }
-
-    // Cleanup function
-    return () => {
-      if (window.recaptchaVerifier) {
-        window.recaptchaVerifier.clear();
-        window.recaptchaVerifier = null;
-      }
-    };
-  }, []);
   // Lock body scroll
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -116,7 +84,7 @@ export default function Auth({ onClose }) {
     setConfirmPassword("");
     setShowNewPassword(false);
     setShowConfirmPassword(false);
-    setProfile({ fullName: "", dob: "", gender: "", email: "" });
+    setProfile({ fullName: "", email: "" });
     setEmailVerificationState({ code: "", sent: false, verified: false, loading: false });
   }, [mode]);
 
@@ -239,10 +207,9 @@ export default function Auth({ onClose }) {
         setCanResend(false);
         setSuccess(`Login code sent to ${emailLower}`);
       } else if (isMobileDetected) {
-        // Mobile OTP Signup/Login via Firebase (Unchanged)
+        // Mobile OTP Signup/Login via Firebase (reCAPTCHA removed)
         setIsEmailOtpFlow(false);
-        const appVerifier = window.recaptchaVerifier;
-        const confirmRes = await signInWithPhoneNumber(auth, loginValue, appVerifier);
+        const confirmRes = await signInWithPhoneNumber(auth, loginValue);
         setConfirmationResult(confirmRes);
         setStep("otp");
         setTimer(30);
@@ -344,8 +311,7 @@ export default function Auth({ onClose }) {
       if (!isMobile) throw new Error("OTP is currently for mobile only");
       const loginValue = `+91${identifier}`;
 
-      const appVerifier = window.recaptchaVerifier;
-      const confirmRes = await signInWithPhoneNumber(auth, loginValue, appVerifier);
+      const confirmRes = await signInWithPhoneNumber(auth, loginValue);
       setConfirmationResult(confirmRes);
 
       setTimer(30);
@@ -431,23 +397,8 @@ export default function Auth({ onClose }) {
     setLoading(true);
 
     try {
-      if (!profile.fullName || !profile.dob || !profile.gender) {
-        throw new Error("Please fill in all fields.");
-      }
-
-      // Validate DOB
-      const selectedDate = new Date(profile.dob);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (selectedDate > today) {
-        setDobError("Date of birth cannot be in the future.");
-        throw new Error("Please correct your date of birth.");
-      }
-      const age = today.getFullYear() - selectedDate.getFullYear() -
-        (today < new Date(today.getFullYear(), selectedDate.getMonth(), selectedDate.getDate()) ? 1 : 0);
-      if (age < 18) {
-        setDobError("You must be at least 18 years old to register.");
-        throw new Error("You must be at least 18 years old to register.");
+      if (!profile.fullName) {
+        throw new Error("Please fill in your full name.");
       }
 
       if (!emailVerificationState.verified) {
@@ -462,9 +413,7 @@ export default function Auth({ onClose }) {
       // Sync full profile to Supabase (role is only set on first insert)
       await syncUserProfile(currentUser, {
         email: profile.email,
-        full_name: profile.fullName,
-        dob: profile.dob,
-        gender: profile.gender,
+        full_name: profile.fullName
       });
 
       finishAuth();
@@ -968,65 +917,6 @@ export default function Auth({ onClose }) {
               )}
 
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1">Date of Birth</label>
-                  <div
-                    className={`relative cursor-pointer group`}
-                    onClick={() => dateInputRef.current?.showPicker()}
-                  >
-                    <Calendar className={`absolute left-3 top-3 w-4 h-4 ${dobError ? 'text-red-400' : 'text-gray-400'} group-hover:text-[#2B2B2B] transition-colors pointer-events-none`} />
-                    <input
-                      ref={dateInputRef}
-                      type="date"
-                      value={profile.dob}
-                      max={new Date().toISOString().split('T')[0]}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setProfile({ ...profile, dob: val });
-                        setDobError('');
-                        if (val) {
-                          const selected = new Date(val);
-                          const now = new Date();
-                          now.setHours(0, 0, 0, 0);
-                          if (selected > now) {
-                            setDobError('Date of birth cannot be in the future.');
-                          } else {
-                            const age = now.getFullYear() - selected.getFullYear() -
-                              (now < new Date(now.getFullYear(), selected.getMonth(), selected.getDate()) ? 1 : 0);
-                            if (age < 18) {
-                              setDobError('You must be at least 18 years old to register.');
-                            }
-                          }
-                        }
-                      }}
-                      className={`w-full pl-10 pr-4 py-3 bg-gray-50 border-2 ${dobError ? 'border-red-400 bg-red-50' : 'border-transparent'} focus:border-[#2B2B2B] focus:bg-white rounded-xl outline-none font-medium text-sm text-[#2B2B2B] transition-all duration-200 cursor-pointer`}
-                    />
-                  </div>
-                  {dobError && (
-                    <p className="text-[11px] text-red-500 font-semibold ml-1 flex items-center gap-1 animate-in fade-in slide-in-from-top-1 duration-200">
-                      ⚠ {dobError}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1">Gender</label>
-                  <div className="relative group">
-                    <select
-                      value={profile.gender}
-                      onChange={(e) => setProfile({ ...profile, gender: e.target.value })}
-                      className={`w-full px-4 py-3 bg-gray-50 border-2 border-transparent focus:border-[#2B2B2B] focus:bg-white rounded-xl outline-none font-medium appearance-none transition-all duration-200 cursor-pointer ${profile.gender ? 'text-[#2B2B2B]' : 'text-gray-400'}`}
-                    >
-                      <option value="" disabled>Select Gender</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                    </select>
-                    <ChevronDown className="absolute right-4 top-3.5 w-5 h-5 text-gray-400 group-hover:text-[#2B2B2B] transition-colors pointer-events-none" />
-                  </div>
-                </div>
-              </div>
             </div>
 
             <button
@@ -1038,10 +928,7 @@ export default function Auth({ onClose }) {
           </form>
         )}
 
-        {/* Hidden recaptcha verifier container */}
-        <div id="recaptcha-verifier"></div>
       </div>
     </div>
   );
 }
-
