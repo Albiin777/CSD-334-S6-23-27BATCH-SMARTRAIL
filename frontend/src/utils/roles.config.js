@@ -6,6 +6,7 @@
 
 export const AUTHORIZED_ADMINS = [
     'hashlinairah@gmail.com',
+    'albynklpra33@gmail.com'
 ];
 
 export const AUTHORIZED_TTES = [

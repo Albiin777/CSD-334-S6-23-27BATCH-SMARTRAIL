@@ -136,8 +136,9 @@ export function SmartRailProvider({ children }) {
                     if (currentUser?.uid) {
                         const pDoc = await getDoc(doc(db, 'profiles', currentUser.uid));
                         if (pDoc.exists()) {
-                            profileName = pDoc.data().full_name || pDoc.data().fullName || pDoc.data().name;
-                            if (pDoc.data().email) tteEmail = pDoc.data().email;
+                            const pData = pDoc.data();
+                            profileName = pData.full_name || pData.fullName || pData.name;
+                            if (pData.email) tteEmail = pData.email;
                         }
                     }
 
@@ -165,8 +166,11 @@ export function SmartRailProvider({ children }) {
                             assignmentData = qSnap.docs[0].data();
                             assignedTrainNumber = assignmentData.train_no;
                             assignedCoachId = assignmentData.coach_ids?.[0];
+                            
+                            const finalDisplayName = profileName || currentUser?.displayName || assignmentData.tte_name || 'TTE';
+
                             setTteDetails({
-                                name: profileName || currentUser?.displayName || assignmentData.tte_name || 'TTE',
+                                name: finalDisplayName,
                                 id: assignmentData.tte_id || 'TTE-001',
                                 trainName: assignmentData.train_name,
                                 source: assignmentData.source_station,
@@ -279,7 +283,7 @@ export function SmartRailProvider({ children }) {
     };
 
     const tteInfo = {
-        name: tteDetails?.name || 'TTE',
+        name: tteDetails?.name || auth.currentUser?.displayName || 'TTE',
         id: tteDetails?.id || '—',
         trainNo: trainDetails?.train_number || '—',
         trainName: tteDetails?.trainName || trainDetails?.train_name || '—',

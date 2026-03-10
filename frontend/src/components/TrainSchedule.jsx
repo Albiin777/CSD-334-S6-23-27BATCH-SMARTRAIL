@@ -207,7 +207,12 @@ export default function TrainSchedule() {
                                 const newDate = new Date(e.target.value);
                                 if (!isNaN(newDate.getTime())) setSelectedDate(newDate);
                             }}
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                            onClick={(e) => {
+                                try {
+                                    e.target.showPicker();
+                                } catch (err) { }
+                            }}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
                         />
                     </div>
 

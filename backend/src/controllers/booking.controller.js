@@ -1,5 +1,6 @@
 import bookingService from '../services/booking.service.js';
 import { dataStore } from '../../data/dataLoader.js';
+import { sendBookingConfirmationEmail } from '../services/email.service.js';
 
 const createBookingHandler = async (req, res) => {
     try {
@@ -55,6 +56,23 @@ const createBookingHandler = async (req, res) => {
             trainSchedule, 
             userId
         );
+
+        // --- Send Email Confirmation if logged in ---
+        if (req.user?.email) {
+            try {
+                await sendBookingConfirmationEmail(req.user.email, {
+                    pnr: booking.pnr,
+                    trainNumber,
+                    journeyDate,
+                    source,
+                    destination,
+                    passengers: booking.passengers
+                });
+            } catch (emailErr) {
+                console.error("[Booking Email Error] Failed to send confirmation:", emailErr.message);
+                // We don't fail the request if just the email fails
+            }
+        }
 
         res.status(201).json(booking);
     } catch (err) {

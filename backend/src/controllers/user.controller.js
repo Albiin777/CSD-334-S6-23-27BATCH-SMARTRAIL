@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
-import nodemailer from 'nodemailer';
 import { adminAuth, adminDb } from '../config/firebaseAdmin.js';
+import { sendOTPEmail } from '../services/email.service.js';
 
 dotenv.config();
 
@@ -126,52 +126,8 @@ export const sendCustomEmailOTP = async (req, res) => {
             expires_at: expiresAt
         });
 
-        // Check for credentials
-        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-            console.error('[Email OTP] Missing credentials:', { 
-                user: !!process.env.EMAIL_USER, 
-                pass: !!process.env.EMAIL_PASS 
-            });
-            return res.status(500).json({ error: 'Email service not configured correctly on server.' });
-        }
-
-        // Setup Nodemailer - Using standard SMTP configuration for better compatibility
-        const transporter = nodemailer.createTransport({
-            host: 'smtp.gmail.com',
-            port: 465,
-            secure: true,
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS
-            }
-        });
-
-        // Send Email
-        await transporter.sendMail({
-            from: `"SmartRail" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: 'SmartRail Verification Code',
-            html: `
-                <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto; background-color: #f9fafb; border-radius: 20px; border: 1px solid #e5e7eb;">
-                    <div style="text-align: center; margin-bottom: 30px;">
-                        <h1 style="color: #111827; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">SmartRail</h1>
-                        <p style="color: #6b7280; font-size: 14px; margin-top: 4px;">Intelligent Network Operations</p>
-                    </div>
-                    
-                    <div style="background-color: #ffffff; padding: 32px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
-                        <p style="color: #374151; font-size: 16px; line-height: 24px;">To finish setting up your account, please enter the following verification code:</p>
-                        
-                        <div style="text-align: center; margin: 32px 0;">
-                            <h1 style="color: #4F46E5; letter-spacing: 12px; font-size: 42px; font-weight: 900; margin: 0; display: inline-block;">${otpCode}</h1>
-                        </div>
-                        
-                        <p style="color: #6b7280; font-size: 14px; line-height: 20px; border-top: 1px solid #f3f4f6; pt-20px; margin-top: 24px; padding-top: 24px;"> This code is valid for 10 minutes. If you did not request this code, please ignore this message. </p>
-                    </div>
-                    
-                    <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 30px;"> &copy; 2026 SmartRail. All rights reserved. </p>
-                </div>
-            `
-        });
+        // Send Email using the new centralized service (Resend)
+        await sendOTPEmail(email, otpCode);
 
         res.status(200).json({ message: 'OTP sent successfully to ' + email });
     } catch (error) {
