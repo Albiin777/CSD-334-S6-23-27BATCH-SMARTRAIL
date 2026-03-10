@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { auth } from '../../utils/firebaseClient';
+import { onAuthStateChanged } from 'firebase/auth';
 
 const SmartRailContext = createContext(null);
 
@@ -143,282 +144,310 @@ export function SmartRailProvider({ children }) {
         return () => clearInterval(timer);
     }, []);
 
-    // ── Load everything from Supabase ──
+    // ── Load everything from Supabase, but only after Firebase has resolved the user ──
     useEffect(() => {
-        async function loadFromSupabase() {
-            if (!supabase) {
-                setError('Supabase is not configured. Check your .env file.');
-                setDataSource('error');
+        if (!supabase) {
+            setError('Supabase is not configured. Check your .env file.');
+            setDataSource('error');
+            setLoading(false);
+            return;
+        }
+
+        // onAuthStateChanged fires as soon as Firebase resolves the persistent session
+        // (auth.currentUser is null until that moment, so we cannot use it directly).
+        // Use `let` (not `const`) because Firebase can fire synchronously for cached auth,
+        // which would hit the TDZ if we used const before the variable is assigned.
+        let unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+            // Unsubscribe after first fire so we don't re-fetch on every auth change
+            if (unsubscribeAuth) unsubscribeAuth();
+
+            // If Firebase resolved to no user and localStorage has no cached email,
+            // App.jsx will redirect away — nothing to load here.
+            if (!currentUser && !localStorage.getItem('tteEmail')) {
                 setLoading(false);
                 return;
             }
 
-            try {
-                // 0. Fetch TTE's real name from profiles table using Firebase UID
-                let profileName = null;
-                const currentUser = auth.currentUser;
-                if (currentUser?.uid && supabase) {
-                    const { data: profileData } = await supabase
-                        .from('profiles')
-                        .select('full_name, email')
-                        .eq('id', currentUser.uid)
-                        .maybeSingle();
-                    if (profileData?.full_name) {
-                        profileName = profileData.full_name;
+            async function loadFromSupabase() {
+                try {
+                    // 0. Fetch TTE's real name & email from profiles table using Firebase UID
+                    let profileName = null;
+                    let tteEmail = currentUser?.email || null;
+
+                    if (currentUser?.uid) {
+                        const { data: profileData } = await supabase
+                            .from('profiles')
+                            .select('full_name, email')
+                            .eq('id', currentUser.uid)
+                            .maybeSingle();
+
+                        if (profileData?.full_name) {
+                            profileName = profileData.full_name;
+                        }
+                        // Prefer profile email (most reliable), fallback to Firebase email
+                        if (profileData?.email) {
+                            tteEmail = profileData.email;
+                            localStorage.setItem('tteEmail', profileData.email);
+                        }
                     }
-                    // Also store email so assignment lookup works
-                    if (profileData?.email && !localStorage.getItem('tteEmail')) {
-                        localStorage.setItem('tteEmail', profileData.email);
+
+                    // Fallback: use cached email from localStorage if no Firebase user
+                    if (!tteEmail) {
+                        tteEmail = localStorage.getItem('tteEmail');
                     }
-                }
 
-                // 1. Find the train dynamically based on Admin Duty Assignment
-                const tteEmail = localStorage.getItem('tteEmail') || currentUser?.email;
+                    // 1. Find the train dynamically based on Admin Duty Assignment
+                    let assignedTrainNumber = null;
+                    let assignedCoachId = null;
 
-                let assignedTrainNumber = null;
+                    if (tteEmail) {
+                        const { data: assignmentData, error: assignmentErr } = await supabase
+                            .from('tte_assignments')
+                            .select('train_no, train_name, source_station, dest_station, tte_name, tte_id, coach_ids')
+                            .ilike('tte_email', tteEmail)
+                            .ilike('status', 'active')
+                            .order('created_at', { ascending: false })
+                            .limit(1)
+                            .maybeSingle();
 
-                if (tteEmail) {
-                    // Look up duty assignment case-insensitively
-                    const { data: assignmentData, error: assignmentErr } = await supabase
-                        .from('tte_assignments')
-                        .select('train_no, train_name, source_station, dest_station, tte_name, tte_id, coach_id')
-                        .ilike('tte_email', tteEmail)
-                        .ilike('status', 'active')
-                        .order('created_at', { ascending: false })
-                        .limit(1)
-                        .maybeSingle();
+                        if (!assignmentErr && assignmentData) {
+                            assignedTrainNumber = assignmentData.train_no;
+                            // DutyAssignments.jsx uses coach_ids (array)
+                            const coachList = assignmentData.coach_ids || [];
+                            assignedCoachId = coachList.length > 0 ? coachList[0] : null;
 
-                    if (!assignmentErr && assignmentData) {
-                        assignedTrainNumber = assignmentData.train_no;
-                        setTteDetails({
-                            name: profileName || assignmentData.tte_name,
-                            id: assignmentData.tte_id,
-                            trainName: assignmentData.train_name,
-                            source: assignmentData.source_station,
-                            destination: assignmentData.dest_station,
-                            assignedCoachId: assignmentData.coach_id || null,
-                        });
+                            setTteDetails({
+                                name: profileName || assignmentData.tte_name,
+                                id: assignmentData.tte_id,
+                                trainName: assignmentData.train_name,
+                                source: assignmentData.source_station,
+                                destination: assignmentData.dest_station,
+                                assignedCoachId,
+                                assignedCoaches: coachList,
+                            });
+                        } else if (profileName) {
+                            setTteDetails(prev => ({ ...prev, name: profileName }));
+                        }
                     } else if (profileName) {
                         setTteDetails(prev => ({ ...prev, name: profileName }));
                     }
-                } else if (profileName) {
-                    setTteDetails(prev => ({ ...prev, name: profileName }));
-                }
 
-                // Fallback to localStorage or just finding the latest train if no active assignment
-                if (!assignedTrainNumber) {
-                    assignedTrainNumber = localStorage.getItem('tte_train_number');
-                }
-
-                let query = supabase.from('admin_trains').select('id, train_number, name, source, destination, departure_time, arrival_time');
-
-                if (assignedTrainNumber) {
-                    query = query.eq('train_number', assignedTrainNumber);
-                } else {
-                    query = query.order('id', { ascending: false }).limit(1);
-                }
-
-                const { data: trainDataList, error: trainErr } = await query;
-                const trainData = trainDataList?.[0];
-
-                if (trainErr || !trainData) {
-                    setError(`No train found. Ensure you have an active assignment or book a ticket to initialize one. (Train No: ${assignedTrainNumber || 'None'})`);
-                    setDataSource('error');
-                    setLoading(false);
-                    return;
-                }
-
-                setTrainId(trainData.id);
-                setTrainDetails(trainData);
-                // Save it for reference
-                localStorage.setItem('tte_train_number', trainData.train_number);
-
-                // 2. Load coaches
-                const { data: coachData, error: coachErr } = await supabase
-                    .from('coaches')
-                    .select('*')
-                    .eq('train_id', trainData.id)
-                    .order('position');
-
-                if (!coachErr && coachData && coachData.length > 0) {
-                    const mapped = coachData.map(c => ({
-                        id: c.coach_id,
-                        type: c.coach_type,
-                        label: c.label,
-                        dbId: c.id,
-                    }));
-                    setCoaches(mapped);
-
-                    // Default to TTE's assigned coach if available, otherwise first coach
-                    const defaultCoach = tteDetails?.assignedCoachId
-                        ? (mapped.find(c => c.id === tteDetails.assignedCoachId)?.id || mapped[0]?.id)
-                        : mapped[0]?.id;
-                    setSelectedCoach(defaultCoach || null);
-                }
-
-                // Fetch seat layout structure from backend API for this train
-                try {
-                    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
-                    const layoutRes = await fetch(`${apiUrl}/trains/${trainData.train_number}/seat-layout`);
-                    if (layoutRes.ok) {
-                        const layoutData = await layoutRes.json();
-                        if (layoutData?.coaches) {
-                            const coachMap = {};
-                            layoutData.coaches.forEach(c => {
-                                const coachId = c.coachId || c.coachNumber;
-                                if (coachId) {
-                                    coachMap[coachId] = {
-                                        classCode: c.classCode,
-                                        totalSeats: c.totalSeats,
-                                        berths: c.seats || [], // [{seatNumber, berthType}]
-                                    };
-                                }
-                            });
-                            setBackendCoachMap(coachMap);
-                            addLog(`Seat layout loaded from backend for ${Object.keys(coachMap).length} coaches`, 'info');
-                        }
+                    // Fallback to localStorage if no active assignment found
+                    if (!assignedTrainNumber) {
+                        assignedTrainNumber = localStorage.getItem('tte_train_number');
                     }
-                } catch (layoutErr) {
-                    console.warn('Backend seat layout fetch failed, using COACH_CONFIGS fallback:', layoutErr.message);
+
+                    let query = supabase.from('admin_trains').select('id, train_number, name, source, destination, departure_time, arrival_time');
+
+                    if (assignedTrainNumber) {
+                        query = query.eq('train_number', assignedTrainNumber);
+                    } else {
+                        query = query.order('id', { ascending: false }).limit(1);
+                    }
+
+                    const { data: trainDataList, error: trainErr } = await query;
+                    const trainData = trainDataList?.[0];
+
+                    if (trainErr || !trainData) {
+                        setError(`No train found. Ensure you have an active duty assignment. (Train No: ${assignedTrainNumber || 'None'})`);
+                        setDataSource('error');
+                        setLoading(false);
+                        return;
+                    }
+
+                    setTrainId(trainData.id);
+                    setTrainDetails(trainData);
+                    localStorage.setItem('tte_train_number', trainData.train_number);
+
+                    // 2. Load coaches
+                    const { data: coachData, error: coachErr } = await supabase
+                        .from('coaches')
+                        .select('*')
+                        .eq('train_id', trainData.id)
+                        .order('position');
+
+                    if (!coachErr && coachData && coachData.length > 0) {
+                        const mapped = coachData.map(c => ({
+                            id: c.coach_id,
+                            type: c.coach_type,
+                            label: c.label,
+                            dbId: c.id,
+                        }));
+                        setCoaches(mapped);
+
+                        // Default to the TTE's assigned coach, otherwise first coach
+                        const defaultCoach = assignedCoachId
+                            ? (mapped.find(c => c.id === assignedCoachId)?.id || mapped[0]?.id)
+                            : mapped[0]?.id;
+                        setSelectedCoach(defaultCoach || null);
+                    }
+
+                    // Fetch seat layout structure from backend API for this train
+                    try {
+                        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+                        const layoutRes = await fetch(`${apiUrl}/trains/${trainData.train_number}/seat-layout`);
+                        if (layoutRes.ok) {
+                            const layoutData = await layoutRes.json();
+                            if (layoutData?.coaches) {
+                                const coachMap = {};
+                                layoutData.coaches.forEach(c => {
+                                    const coachId = c.coachId || c.coachNumber;
+                                    if (coachId) {
+                                        coachMap[coachId] = {
+                                            classCode: c.classCode,
+                                            totalSeats: c.totalSeats,
+                                            berths: c.seats || [],
+                                        };
+                                    }
+                                });
+                                setBackendCoachMap(coachMap);
+                                addLog(`Seat layout loaded from backend for ${Object.keys(coachMap).length} coaches`, 'info');
+                            }
+                        }
+                    } catch (layoutErr) {
+                        console.warn('Backend seat layout fetch failed, using COACH_CONFIGS fallback:', layoutErr.message);
+                    }
+
+                    // 3. Load TTE passengers for this train
+                    const { data: paxData, error: paxErr } = await supabase
+                        .from('tte_passengers')
+                        .select('*')
+                        .eq('train_id', trainData.id)
+                        .order('coach_id')
+                        .order('seat_no');
+
+                    let mapped = [];
+                    if (!paxErr && paxData) {
+                        mapped = paxData.map(p => ({
+                            id: p.id,
+                            pnr: p.pnr,
+                            name: p.name,
+                            age: p.age,
+                            gender: p.gender,
+                            mobile: p.mobile,
+                            seatNo: p.seat_no,
+                            coach: p.coach_id,
+                            boarding: p.boarding,
+                            destination: p.destination,
+                            status: p.status,
+                            idProof: p.id_proof,
+                            ticketClass: p.ticket_class,
+                            verified: p.verified,
+                            flags: p.flags || [],
+                            fare: parseFloat(p.fare) || 0,
+                        }));
+                    }
+                    setPassengers(mapped);
+                    console.log(`SmartRail: Loaded ${mapped.length} passengers from Supabase`);
+
+                    // 4. Load incidents
+                    const { data: incData, error: incErr } = await supabase
+                        .from('incidents')
+                        .select('*')
+                        .eq('train_id', trainData.id)
+                        .order('created_at', { ascending: false });
+
+                    if (!incErr && incData) {
+                        setIncidents(incData.map(i => ({
+                            id: i.id,
+                            type: i.type,
+                            description: i.description,
+                            status: i.status,
+                            time: new Date(i.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                            coach: i.coach,
+                            reporter: i.reporter_name || 'TTE',
+                        })));
+                    }
+
+                    // 5. Load fines
+                    const { data: fineData, error: fineErr } = await supabase
+                        .from('fines')
+                        .select('*')
+                        .eq('train_id', trainData.id)
+                        .order('created_at', { ascending: false });
+
+                    if (!fineErr && fineData) {
+                        setFines(fineData.map(f => ({
+                            id: f.id,
+                            passenger: f.passenger_name || 'Unknown',
+                            reason: f.reason,
+                            amount: parseFloat(f.amount),
+                            method: 'Cash',
+                            time: new Date(f.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                            receipt: f.receipt_no || `FN-${String(f.id).padStart(3, '0')}`,
+                        })));
+                    }
+
+                    // 6. Load reviews for this train
+                    const { data: reviewData } = await supabase
+                        .from('reviews')
+                        .select('*')
+                        .eq('train_no', trainData.train_number)
+                        .order('created_at', { ascending: false });
+
+                    if (reviewData) {
+                        setReviews(reviewData.map(r => ({
+                            id: r.id,
+                            passenger: r.passenger_name || 'Passenger',
+                            pnr: r.pnr || '',
+                            coach: r.coach || '',
+                            seat: r.seat_no || '',
+                            rating: r.rating || 0,
+                            category: r.category || 'General',
+                            comment: r.comment || '',
+                            date: new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                            helpful: r.helpful_count || 0,
+                        })));
+                    }
+
+                    // 7. Load complaints for this train
+                    const { data: complaintData } = await supabase
+                        .from('complaints')
+                        .select('*, complaint_replies(*)')
+                        .eq('train_no', trainData.train_number)
+                        .order('created_at', { ascending: false });
+
+                    if (complaintData) {
+                        setComplaints(complaintData.map(c => ({
+                            id: c.complaint_id || `CMP-${String(c.id).padStart(3, '0')}`,
+                            dbId: c.id,
+                            passenger: c.passenger_name || 'Passenger',
+                            pnr: c.pnr || '',
+                            coach: c.coach || '',
+                            seat: c.seat_no || '',
+                            category: c.category || 'General',
+                            priority: c.priority || 'Medium',
+                            status: c.status || 'Open',
+                            description: c.description || '',
+                            date: new Date(c.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                            time: new Date(c.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                            assignedTo: c.assigned_to || 'TTE',
+                            responses: (c.complaint_replies || []).map(r => ({
+                                by: r.replied_by || 'System',
+                                text: r.reply_text || '',
+                                time: new Date(r.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                            })),
+                        })));
+                    }
+
+                    setDataSource('supabase');
+                    addLog('Connected to Supabase — live data loaded', 'station');
+
+                } catch (err) {
+                    console.error('SmartRail: Supabase load error', err);
+                    setError(err.message);
+                    setDataSource('error');
+                } finally {
+                    setLoading(false);
                 }
-
-                // 3. Load TTE passengers for this train
-                const today = new Date().toISOString().split('T')[0];
-                const { data: paxData, error: paxErr } = await supabase
-                    .from('tte_passengers')
-                    .select('*')
-                    .eq('train_id', trainData.id)
-                    .order('coach_id')
-                    .order('seat_no');
-
-                let mapped = [];
-                if (!paxErr && paxData) {
-                    mapped = paxData.map(p => ({
-                        id: p.id,
-                        pnr: p.pnr,
-                        name: p.name,
-                        age: p.age,
-                        gender: p.gender,
-                        mobile: p.mobile,
-                        seatNo: p.seat_no,
-                        coach: p.coach_id,
-                        boarding: p.boarding,
-                        destination: p.destination,
-                        status: p.status,
-                        idProof: p.id_proof,
-                        ticketClass: p.ticket_class,
-                        verified: p.verified,
-                        flags: p.flags || [],
-                        fare: parseFloat(p.fare) || 0,
-                    }));
-                }
-                setPassengers(mapped);
-                console.log(`SmartRail: Loaded ${mapped.length} passengers from Supabase`);
-
-                // 4. Load incidents
-                const { data: incData, error: incErr } = await supabase
-                    .from('incidents')
-                    .select('*')
-                    .eq('train_id', trainData.id)
-                    .order('created_at', { ascending: false });
-
-                if (!incErr && incData) {
-                    setIncidents(incData.map(i => ({
-                        id: i.id,
-                        type: i.type,
-                        description: i.description,
-                        status: i.status,
-                        time: new Date(i.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-                        coach: i.coach,
-                        reporter: i.reporter_name || 'TTE',
-                    })));
-                }
-
-                // 5. Load fines
-                const { data: fineData, error: fineErr } = await supabase
-                    .from('fines')
-                    .select('*')
-                    .eq('train_id', trainData.id)
-                    .order('created_at', { ascending: false });
-
-                if (!fineErr && fineData) {
-                    setFines(fineData.map(f => ({
-                        id: f.id,
-                        passenger: f.passenger_name || 'Unknown',
-                        reason: f.reason,
-                        amount: parseFloat(f.amount),
-                        method: 'Cash',
-                        time: new Date(f.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-                        receipt: f.receipt_no || `FN-${String(f.id).padStart(3, '0')}`,
-                    })));
-                }
-
-                // 6. Load reviews for this train
-                const { data: reviewData } = await supabase
-                    .from('reviews')
-                    .select('*')
-                    .eq('train_no', trainData.train_number)
-                    .order('created_at', { ascending: false });
-
-                if (reviewData) {
-                    setReviews(reviewData.map(r => ({
-                        id: r.id,
-                        passenger: r.passenger_name || 'Passenger',
-                        pnr: r.pnr || '',
-                        coach: r.coach || '',
-                        seat: r.seat_no || '',
-                        rating: r.rating || 0,
-                        category: r.category || 'General',
-                        comment: r.comment || '',
-                        date: new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-                        helpful: r.helpful_count || 0,
-                    })));
-                }
-
-                // 7. Load complaints for this train
-                const { data: complaintData } = await supabase
-                    .from('complaints')
-                    .select('*, complaint_replies(*)')
-                    .eq('train_no', trainData.train_number)
-                    .order('created_at', { ascending: false });
-
-                if (complaintData) {
-                    setComplaints(complaintData.map(c => ({
-                        id: c.complaint_id || `CMP-${String(c.id).padStart(3, '0')}`,
-                        dbId: c.id,
-                        passenger: c.passenger_name || 'Passenger',
-                        pnr: c.pnr || '',
-                        coach: c.coach || '',
-                        seat: c.seat_no || '',
-                        category: c.category || 'General',
-                        priority: c.priority || 'Medium',
-                        status: c.status || 'Open',
-                        description: c.description || '',
-                        date: new Date(c.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-                        time: new Date(c.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-                        assignedTo: c.assigned_to || 'TTE',
-                        responses: (c.complaint_replies || []).map(r => ({
-                            by: r.replied_by || 'System',
-                            text: r.reply_text || '',
-                            time: new Date(r.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-                        })),
-                    })));
-                }
-
-                setDataSource('supabase');
-                addLog('Connected to Supabase — live data loaded', 'station');
-
-            } catch (err) {
-                console.error('SmartRail: Supabase load error', err);
-                setError(err.message);
-                setDataSource('error');
-            } finally {
-                setLoading(false);
             }
-        }
 
-        loadFromSupabase();
+            await loadFromSupabase();
+        });
+
+        return () => unsubscribeAuth();
     }, []);
+
 
     const safeCoach = selectedCoach || '';
     const currentCoachObj = coaches.find(c => c.id === safeCoach) || null;
@@ -670,7 +699,7 @@ export function SmartRailProvider({ children }) {
         time, stats, tteInfo, passengers: coachPassengers, allPassengers: passengers, seats, incidents, fines,
         reviews, complaints, setComplaints,
         backendCoachMap,
-        logs, stationIndex,
+        logs, stationIndex, stations: STATIONS, currentStation: STATIONS[stationIndex],
         coaches, coachConfigs: COACH_CONFIGS, selectedCoach, setSelectedCoach,
         currentCoachType, currentConfig,
         verifyPassenger, markNoShow, upgradeRAC, addFine, addIncident, nextStation, addLog, issueTicket,

@@ -107,24 +107,133 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* Seat Heatmap */}
-            <div className="bg-[#2B2B2B] rounded-2xl border border-[#D4D4D4]/10 p-6">
-                <h3 className="text-sm font-bold text-[#B3B3B3] uppercase tracking-wider mb-3">
-                    Coach {selectedCoach} — Berth Heatmap
-                </h3>
-                <div className="grid grid-cols-12 gap-1">
-                    {seats.map((seat, i) => {
-                        const c = seat.status === 'booked' ? 'bg-red-500' : seat.status === 'rac' ? 'bg-amber-500' : seat.status === 'waitlist' ? 'bg-orange-500' : 'bg-emerald-500/50';
-                        return <div key={i} className={`h-3 rounded-sm ${c}`} title={`Berth ${seat.number} — ${seat.typeShort}`} />;
-                    })}
-                </div>
-                <div className="flex gap-4 mt-3 text-[10px] font-semibold text-[#9CA3AF]">
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500/50 inline-block" /> Available</span>
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500 inline-block" /> Booked</span>
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-500 inline-block" /> RAC</span>
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-orange-500 inline-block" /> Waitlist</span>
-                </div>
-            </div>
+            {/* Seat Heatmap — Real Coach Layout */}
+            {(() => {
+                const isChair = coachCfg?.isChair;
+                const berthsPerBay = coachCfg?.berthsPerBay || 8;
+                const hasSide = coachCfg?.hasSide ?? true;
+                // Split seats into bays
+                const bays = [];
+                for (let i = 0; i < seats.length; i += berthsPerBay) {
+                    bays.push(seats.slice(i, i + berthsPerBay));
+                }
+                const statusColor = (s) =>
+                    s === 'booked' ? 'bg-red-500 border-red-600 text-white'
+                    : s === 'rac' ? 'bg-amber-500 border-amber-600 text-black'
+                    : s === 'waitlist' ? 'bg-orange-500 border-orange-600 text-black'
+                    : 'bg-emerald-500/30 border-emerald-500/50 text-emerald-300';
+
+                return (
+                    <div className="bg-[#2B2B2B] rounded-2xl border border-[#D4D4D4]/10 p-6">
+                        <h3 className="text-sm font-bold text-[#B3B3B3] uppercase tracking-wider mb-4">
+                            Coach {selectedCoach} — Seat Layout
+                        </h3>
+
+                        {/* Column headers */}
+                        {!isChair && (
+                            <div className="flex gap-1 mb-2">
+                                <div className="w-8 shrink-0" />
+                                <div className="flex-1 grid grid-cols-3 gap-1 text-[9px] font-bold text-[#6B7280] text-center uppercase tracking-wider">
+                                    <span>Lower</span><span>Middle</span><span>Upper</span>
+                                </div>
+                                {hasSide && (
+                                    <div className="w-1 bg-[#D4D4D4]/10 mx-1 rounded-full" />
+                                )}
+                                {hasSide && (
+                                    <div className="flex gap-1" style={{ width: '4.5rem' }}>
+                                        <span className="flex-1 text-[9px] font-bold text-[#6B7280] text-center uppercase tracking-wider">S.Low</span>
+                                        <span className="flex-1 text-[9px] font-bold text-[#6B7280] text-center uppercase tracking-wider">S.Up</span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Coach bays */}
+                        <div className="overflow-x-auto">
+                            <div className={`flex ${isChair ? 'flex-col gap-1' : 'flex-col gap-1'}`}>
+                                {bays.map((bay, bi) => {
+                                    if (isChair) {
+                                        return (
+                                            <div key={bi} className="flex items-center gap-1">
+                                                <span className="text-[9px] font-bold text-[#6B7280] w-8 shrink-0 text-right pr-1">
+                                                    {bi + 1}
+                                                </span>
+                                                <div className="flex gap-1 flex-1">
+                                                    {bay.map((seat) => (
+                                                        <div
+                                                            key={seat.number}
+                                                            title={`Seat ${seat.number} (${seat.typeShort}) — ${seat.status}`}
+                                                            className={`flex-1 h-7 rounded border text-[8px] font-bold flex flex-col items-center justify-center cursor-default transition ${statusColor(seat.status)}`}
+                                                        >
+                                                            <span>{seat.number}</span>
+                                                            <span className="opacity-60 text-[7px]">{seat.typeShort}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+
+                                    // Sleeper / AC coach: main berths (LB/MB/UB) + side berths (SL/SU)
+                                    const mainBerths = hasSide ? bay.slice(0, berthsPerBay - 2) : bay;
+                                    const sideBerths = hasSide ? bay.slice(berthsPerBay - 2) : [];
+
+                                    return (
+                                        <div key={bi} className="flex items-center gap-1">
+                                            {/* Bay number */}
+                                            <span className="text-[9px] font-bold text-[#6B7280] w-8 shrink-0 text-right pr-1">
+                                                {bi + 1}
+                                            </span>
+
+                                            {/* Main berths: 2 sets of LB/MB/UB side-by-side */}
+                                            <div className="flex-1 grid gap-1"
+                                                style={{ gridTemplateColumns: `repeat(${mainBerths.length}, minmax(0,1fr))` }}>
+                                                {mainBerths.map((seat) => (
+                                                    <div
+                                                        key={seat.number}
+                                                        title={`Berth ${seat.number} (${seat.typeShort}) — ${seat.status}${seat.passenger ? ` · ${seat.passenger.name}` : ''}`}
+                                                        className={`h-8 rounded border text-[8px] font-bold flex flex-col items-center justify-center cursor-default transition ${statusColor(seat.status)}`}
+                                                    >
+                                                        <span>{seat.number}</span>
+                                                        <span className="opacity-60 text-[7px]">{seat.typeShort}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {/* Aisle divider */}
+                                            {hasSide && <div className="w-px bg-[#D4D4D4]/15 self-stretch mx-0.5" />}
+
+                                            {/* Side berths: SL / SU */}
+                                            {hasSide && (
+                                                <div className="flex gap-1" style={{ width: '4.5rem' }}>
+                                                    {sideBerths.map((seat) => (
+                                                        <div
+                                                            key={seat.number}
+                                                            title={`Berth ${seat.number} (${seat.typeShort}) — ${seat.status}${seat.passenger ? ` · ${seat.passenger.name}` : ''}`}
+                                                            className={`flex-1 h-8 rounded border text-[8px] font-bold flex flex-col items-center justify-center cursor-default transition ${statusColor(seat.status)}`}
+                                                        >
+                                                            <span>{seat.number}</span>
+                                                            <span className="opacity-60 text-[7px]">{seat.typeShort}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Legend */}
+                        <div className="flex gap-4 mt-4 text-[10px] font-semibold text-[#9CA3AF]">
+                            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-emerald-500/30 border border-emerald-500/50 inline-block" /> Available</span>
+                            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-500 border border-red-600 inline-block" /> Booked</span>
+                            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-amber-500 border border-amber-600 inline-block" /> RAC</span>
+                            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-orange-500 border border-orange-600 inline-block" /> Waitlist</span>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* Station Progress */}
             <div className="bg-[#2B2B2B] rounded-2xl border border-[#D4D4D4]/10 p-6">

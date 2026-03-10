@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { auth } from "../utils/firebaseClient";
 import { syncUserProfile } from "../utils/userProfile";
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  RecaptchaVerifier, 
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  RecaptchaVerifier,
   signInWithPhoneNumber,
   updatePassword,
   updateProfile,
@@ -67,9 +67,7 @@ export default function Auth({ onClose }) {
 
   // Timer
   const [timer, setTimer] = useState(30);
-  const [canResend, setCanResend] = useState(false);
-
-  // Setup Recaptcha once
+  const [canResend, setCanResend] = useState(false);  // Setup Recaptcha once
   useEffect(() => {
     // Clear existing verifier if it exists to prevent "already rendered" errors
     if (window.recaptchaVerifier) {
@@ -87,7 +85,7 @@ export default function Auth({ onClose }) {
     } catch (err) {
       console.error("Error initializing RecaptchaVerifier:", err);
     }
-    
+
     // Cleanup function
     return () => {
       if (window.recaptchaVerifier) {
@@ -96,8 +94,6 @@ export default function Auth({ onClose }) {
       }
     };
   }, []);
-
-
   // Lock body scroll
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -178,13 +174,13 @@ export default function Auth({ onClose }) {
 
     try {
       const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
-      
+
       // Strip all non-digit characters and take the last 10 digits
       const cleanedIdentifier = identifier.replace(/\D/g, '').slice(-10);
       const isMobile = /^[0-9]{10}$/.test(cleanedIdentifier);
-      
+
       const emailLower = identifier.trim().toLowerCase();
-      
+
       if (forgotPasswordMode) {
 
         if (!isEmail) throw new Error("Please enter a valid Email to reset password.");
@@ -203,6 +199,8 @@ export default function Auth({ onClose }) {
 
       const isMobileDetected = isMobile;
       const loginValue = isMobileDetected ? `+91${cleanedIdentifier}` : identifier.trim();
+      console.log(loginValue);
+
 
       // Pre-check: does this email/phone exist in our profiles table?
       const checkPayload = isEmail ? { email: emailLower } : { phone: `+91${cleanedIdentifier}` };
@@ -224,11 +222,11 @@ export default function Auth({ onClose }) {
       if (isEmail) {
         // Send Custom Email OTP
         const response = await fetch('http://localhost:5001/api/auth/send-custom-email-otp', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: emailLower })
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailLower })
         });
-        
+
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Failed to send email OTP.");
 
@@ -282,17 +280,17 @@ export default function Auth({ onClose }) {
       if (isEmailOtpFlow) {
         // Custom Email OTP Flow
         const emailLower = identifier.trim().toLowerCase();
-        
+
         const response = await fetch('http://localhost:5001/api/auth/verify-custom-email-otp', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: emailLower, token: otpValue })
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailLower, token: otpValue })
         });
-        
+
         const data = await response.json();
-        
+
         if (!response.ok) {
-            throw new Error(data.error || "Failed to verify email OTP.");
+          throw new Error(data.error || "Failed to verify email OTP.");
         }
 
         // We got the custom Firebase Token from the backend, log them into the Client SDK!
@@ -312,10 +310,10 @@ export default function Auth({ onClose }) {
       // Check if the profile is complete (has full_name). If not, send to profile step.
       const { supabase } = await import('../utils/supabaseClient');
       const { data: existingProfile } = await supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', user.uid)
-          .maybeSingle();
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.uid)
+        .maybeSingle();
 
       const profileIsComplete = existingProfile?.full_name;
 
@@ -349,7 +347,7 @@ export default function Auth({ onClose }) {
       const isMobile = /^[0-9]{10}$/.test(identifier);
       if (!isMobile) throw new Error("OTP is currently for mobile only");
       const loginValue = `+91${identifier}`;
-      
+
       const appVerifier = window.recaptchaVerifier;
       const confirmRes = await signInWithPhoneNumber(auth, loginValue, appVerifier);
       setConfirmationResult(confirmRes);
@@ -494,7 +492,7 @@ export default function Auth({ onClose }) {
       setLoading(true);
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
-      
+
       // Sync to Supabase (role is only set on first insert)
       await syncUserProfile(result.user);
 
@@ -601,12 +599,19 @@ export default function Auth({ onClose }) {
                     className="w-full pl-12 pr-4 py-4 bg-gray-50 border-2 border-transparent focus:border-[#2B2B2B] focus:bg-white rounded-xl outline-none transition-all font-medium text-[#2B2B2B] placeholder:text-gray-400"
                     autoFocus
                   />
+                  {/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier) && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <div className="px-2 py-1 bg-blue-50 text-blue-600 text-[9px] font-black uppercase rounded-lg border border-blue-100 animate-pulse">
+                        Email OTP Ready
+                      </div>
+                    </div>
+                  )}
                 </div>
 
 
-                {/* Password Input (Hidden if using OTP login) */}
+                {/* Password Input (Hidden if using OTP login or Email signup) */}
 
-                {!useOtpLogin && (
+                {(!useOtpLogin && !(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier))) && (
                   <div className="relative group animate-in fade-in slide-in-from-top-2">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                       <Lock className="w-5 h-5 text-gray-400" />
@@ -658,10 +663,15 @@ export default function Auth({ onClose }) {
             </div>
 
             <button
-              disabled={loading || !identifier || (!useOtpLogin && !password && mode === 'login') || (mode === 'signup' && !password)}
+              disabled={
+                loading ||
+                !identifier ||
+                (mode === 'login' && !useOtpLogin && !password && !(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier))) ||
+                (mode === 'signup' && !password && !(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)))
+              }
               className="mt-2 w-full bg-[#2B2B2B] text-white py-4 rounded-xl font-black uppercase tracking-widest hover:bg-black transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-black/10"
             >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>{mode === 'login' ? (useOtpLogin ? 'Get OTP' : 'Sign In') : 'Sign Up'} <ArrowRight className="w-5 h-5" /></>}
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>{mode === 'login' ? (useOtpLogin || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier) ? 'Get OTP' : 'Sign In') : 'Sign Up'} <ArrowRight className="w-5 h-5" /></>}
             </button>
 
             {/* Footer Toggle */}
@@ -689,8 +699,8 @@ export default function Auth({ onClose }) {
               <p className="text-sm text-gray-600">
                 Enter the code sent to <br />
                 <span className="font-bold text-[#2B2B2B]">
-                  {/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier) 
-                    ? identifier 
+                  {/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)
+                    ? identifier
                     : (identifier.includes('+91') ? identifier : `+91 ${identifier.replace(/\D/g, '').slice(-10)}`)}
                 </span>
 
@@ -769,7 +779,7 @@ export default function Auth({ onClose }) {
               try {
                 const currentUser = auth.currentUser;
                 if (!currentUser) throw new Error("No user is currently authenticated to change password.");
-                
+
                 await updatePassword(currentUser, newPassword);
                 setSuccess("Password updated successfully!");
                 finishAuth();

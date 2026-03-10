@@ -12,6 +12,11 @@
   scrollbar-width: none;
 }
 
+/* Hide Google reCAPTCHA Badge */
+.grecaptcha-badge {
+  visibility: hidden !important;
+}
+
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;

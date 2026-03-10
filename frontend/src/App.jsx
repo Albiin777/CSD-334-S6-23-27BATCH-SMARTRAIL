@@ -231,6 +231,7 @@ export default function App() {
         localStorage.removeItem('authToken');
         localStorage.removeItem('user');
         setUser(null);
+        setIsAuthLoading(false);
         // Clean up the URL without a full page reload so it doesn't loop
         window.history.replaceState({}, document.title, "/");
       });
@@ -277,7 +278,10 @@ export default function App() {
       } else {
         setUser(null);
         setUserRole(null);
-        // If logged out and on a protected route, redirect to home
+        // Only redirect when Firebase has confirmed there is NO active session.
+        // `setIsAuthLoading(false)` is called BEFORE this point (in the currentUser branch
+        // and the logout early-return), so by the time we reach here the auth state is real.
+        // This prevents kicking a legitimately logged-in TTE/Admin off their page on hard refresh.
         const protectedRoutes = ['/my-account', '/my-bookings', '/admin', '/tte'];
         if (protectedRoutes.some(route => location.pathname.startsWith(route))) {
           navigate('/');
@@ -305,7 +309,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#0f172a] relative">
-      <Header user={user} userRole={userRole} isAuthLoading={isAuthLoading} onLoginClick={() => setIsAuthOpen(true)} />
+      {!isTTEPage && <Header user={user} userRole={userRole} isAuthLoading={isAuthLoading} onLoginClick={() => setIsAuthOpen(true)} />}
 
       {isAuthOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -314,13 +318,10 @@ export default function App() {
       )}
 
       {isTTEPage ? (
-        // TTE portal: full-screen, no wrapper padding, with MiniFooter
-        <>
-          <Routes>
-            <Route path="/tte/*" element={<TTEPage />} />
-          </Routes>
-          <MiniFooter />
-        </>
+        // TTE portal: full-screen, no footer
+        <Routes>
+          <Route path="/tte/*" element={<TTEPage />} />
+        </Routes>
       ) : (
         <>
           <div className={`min-h-screen flex flex-col ${isMiniFooterPage ? '' : 'pt-[70px]'}`}>

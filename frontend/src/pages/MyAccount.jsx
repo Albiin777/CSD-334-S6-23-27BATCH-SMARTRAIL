@@ -288,6 +288,7 @@ export default function MyAccount() {
 
     return (
         <div className="min-h-screen pt-36 pb-20 px-4 sm:px-8 bg-gray-900 text-white font-sans">
+
             {/* Hidden div for Firebase RecaptchaVerifier (used for phone number update) */}
             <div id="account-recaptcha-verifier" style={{ display: 'none' }}></div>
             <div className="max-w-5xl mx-auto">
