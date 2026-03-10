@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { auth, db } from '../../utils/firebaseClient';
 import { onAuthStateChanged } from 'firebase/auth';
+import api from '../../api/train.api';
 import { 
     collection, 
     query, 
@@ -85,18 +86,17 @@ function buildCoachSeats(coachId, coachType, passengerList, backendBerths) {
     });
 }
 
-const STATIONS = [
-    'Chennai Central', 'Perambur', 'Arakkonam Jn', 'Renigunta Jn',
-    'Vijayawada Jn', 'Warangal', 'Nagpur Jn', 'Bhopal Jn',
-    'Jhansi Jn', 'Gwalior Jn', 'Agra Cantt', 'New Delhi',
-];
-
 export function SmartRailProvider({ children }) {
     const [time, setTime] = useState(new Date());
     const [stationIndex, setStationIndex] = useState(0);
     const [selectedCoach, setSelectedCoach] = useState(null);
     const [passengers, setPassengers] = useState([]);
     const [coaches, setCoaches] = useState([]);
+    const [stations, setStations] = useState([
+        'Chennai Central', 'Perambur', 'Arakkonam Jn', 'Renigunta Jn',
+        'Vijayawada Jn', 'Warangal', 'Nagpur Jn', 'Bhopal Jn',
+        'Jhansi Jn', 'Gwalior Jn', 'Agra Cantt', 'New Delhi'
+    ]);
     const [incidents, setIncidents] = useState([]);
     const [fines, setFines] = useState([]);
     const [reviews, setReviews] = useState([]);
@@ -121,8 +121,8 @@ export function SmartRailProvider({ children }) {
     }, []);
 
     useEffect(() => {
-        let unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
-            if (unsubscribeAuth) unsubscribeAuth();
+        const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+            // Remove instant unsubscribe to allow profile updates to reflect if auth changes or loads late
             if (!currentUser && !localStorage.getItem('tteEmail')) {
                 setLoading(false);
                 return;
@@ -136,8 +136,21 @@ export function SmartRailProvider({ children }) {
                     if (currentUser?.uid) {
                         const pDoc = await getDoc(doc(db, 'profiles', currentUser.uid));
                         if (pDoc.exists()) {
-                            profileName = pDoc.data().full_name;
+                            profileName = pDoc.data().full_name || pDoc.data().fullName || pDoc.data().name;
                             if (pDoc.data().email) tteEmail = pDoc.data().email;
+                        }
+                    }
+
+                    // Fallback to searching by email if profile ID didn't match (e.g. legacy accounts or email search)
+                    if (!profileName && tteEmail) {
+                        try {
+                            const profileQ = query(collection(db, 'profiles'), where('email', '==', tteEmail.toLowerCase()), limit(1));
+                            const profileSnap = await getDocs(profileQ);
+                            if (!profileSnap.empty) {
+                                profileName = profileSnap.docs[0].data().full_name || profileSnap.docs[0].data().fullName || profileSnap.docs[0].data().name;
+                            }
+                        } catch (e) {
+                            console.warn("[useSmartRail] Profile search by email failed:", e);
                         }
                     }
 
@@ -154,10 +167,12 @@ export function SmartRailProvider({ children }) {
                             assignedCoachId = assignmentData.coach_ids?.[0];
                             setTteDetails({
                                 name: profileName || currentUser?.displayName || assignmentData.tte_name || 'TTE',
-                                id: assignmentData.tte_id,
+                                id: assignmentData.tte_id || 'TTE-001',
                                 trainName: assignmentData.train_name,
                                 source: assignmentData.source_station,
                                 destination: assignmentData.dest_station,
+                                shift: assignmentData.shift || 'Full Journey',
+                                coachLabel: assignmentData.coach_labels?.[0] || assignedCoachId || 'S1',
                                 assignedCoachId,
                                 assignedCoaches: assignmentData.coach_ids || []
                             });
@@ -177,6 +192,15 @@ export function SmartRailProvider({ children }) {
                     const tData = { id: trainsSnap.docs[0].id, ...trainsSnap.docs[0].data() };
                     setTrainId(tData.id);
                     setTrainDetails(tData);
+
+                    try {
+                        const scheduleRes = await api.getTrainSchedule(tData.train_number);
+                        if (scheduleRes && scheduleRes.data) {
+                            setStations(scheduleRes.data.map(s => s.stationName || s.stationCode));
+                        }
+                    } catch (e) {
+                        console.warn("[useSmartRail] Failed to load schedule:", e);
+                    }
 
                     const coachSnap = await getDocs(query(collection(db, 'coaches'), where('train_id', '==', tData.id), orderBy('position')));
                     let mappedCoaches = coachSnap.docs.map(d => ({ id: d.data().coach_id, type: d.data().coach_type, label: d.data().label, dbId: d.id }));
@@ -236,8 +260,8 @@ export function SmartRailProvider({ children }) {
     }, [passengers]);
 
     const nextStation = () => {
-        setStationIndex(prev => (prev + 1) % STATIONS.length);
-        addLog(`Arrived at ${STATIONS[(stationIndex + 1) % STATIONS.length]}`, 'success');
+        setStationIndex(prev => (prev + 1) % stations.length);
+        addLog(`Arrived at ${stations[(stationIndex + 1) % stations.length]}`, 'success');
     };
 
     const safeCoach = selectedCoach || '';
@@ -258,9 +282,10 @@ export function SmartRailProvider({ children }) {
         name: tteDetails?.name || 'TTE',
         id: tteDetails?.id || '—',
         trainNo: trainDetails?.train_number || '—',
-        trainName: tteDetails?.trainName || trainDetails?.name || '—',
+        trainName: tteDetails?.trainName || trainDetails?.train_name || '—',
         route: `${tteDetails?.source || trainDetails?.source || '—'} → ${tteDetails?.destination || trainDetails?.destination || '—'}`,
-        date: new Date().toLocaleDateString('en-IN'),
+        shift: tteDetails?.shift || '—',
+        coachLabel: tteDetails?.coachLabel || '—',
         coach: safeCoach,
         coachType: currentCoachType,
         dataSource
@@ -270,7 +295,7 @@ export function SmartRailProvider({ children }) {
         time, passengers: coachPassengers, allPassengers: passengers, coaches, incidents, fines, reviews, complaints,
         selectedCoach, setSelectedCoach, tteInfo, stats, seats, dataSource, loading, error,
         verifyPassenger, addLog, logs, getBerthLabel, getBerthFull, getBay, isSideBerth,
-        stations: STATIONS, stationIndex, nextStation, coachConfigs: COACH_CONFIGS
+        stations, stationIndex, nextStation, coachConfigs: COACH_CONFIGS
     };
 
     return <SmartRailContext.Provider value={value}>{children}</SmartRailContext.Provider>;

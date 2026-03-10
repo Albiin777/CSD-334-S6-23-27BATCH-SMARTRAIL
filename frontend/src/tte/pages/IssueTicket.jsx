@@ -1,29 +1,17 @@
-import { useState, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useSmartRail } from '../hooks/useSmartRail';
-import { Ticket, Printer, CheckCircle, ChevronDown, User, Hash, MapPin, Train, CreditCard } from 'lucide-react';
+import api from '../../api/train.api';
+import { Ticket, Printer, CheckCircle, ChevronDown, User, Hash, MapPin, Train as TrainIcon, CreditCard, Loader2 } from 'lucide-react';
 
-const CLASS_FARES = {
-    '1A': { label: 'First AC (1A)', color: '#a855f7', basePerKm: 4.5, min: 1500, icon: '🟣' },
-    '2A': { label: 'AC 2-Tier (2A)', color: '#3b82f6', basePerKm: 2.8, min: 900, icon: '🔵' },
-    '3A': { label: 'AC 3-Tier (3A)', color: '#22c55e', basePerKm: 1.95, min: 600, icon: '🟢' },
-    'SL': { label: 'Sleeper (SL)', color: '#eab308', basePerKm: 0.60, min: 200, icon: '🟡' },
-    'CC': { label: 'Chair Car (CC)', color: '#06b6d4', basePerKm: 1.20, min: 350, icon: '🔵' },
-    '2S': { label: '2nd Sitting (2S)', color: '#f97316', basePerKm: 0.30, min: 80, icon: '🟠' },
-};
-
-const STATION_DISTANCES = {
-    'Chennai Central': 0,
-    'Perambur': 6,
-    'Arakkonam Jn': 69,
-    'Renigunta Jn': 170,
-    'Vijayawada Jn': 432,
-    'Warangal': 575,
-    'Nagpur Jn': 904,
-    'Bhopal Jn': 1161,
-    'Jhansi Jn': 1301,
-    'Gwalior Jn': 1372,
-    'Agra Cantt': 1441,
-    'New Delhi': 2191,
+const CLASS_CONFIG = {
+    '1A': { label: 'First AC (1A)', color: '#a855f7', icon: '🟣' },
+    '2A': { label: 'AC 2-Tier (2A)', color: '#3b82f6', icon: '🔵' },
+    '3A': { label: 'AC 3-Tier (3A)', color: '#22c55e', icon: '🟢' },
+    'SL': { label: 'Sleeper (SL)', color: '#eab308', icon: '🟡' },
+    'CC': { label: 'Chair Car (CC)', color: '#06b6d4', icon: '🔵' },
+    '2S': { label: '2nd Sitting (2S)', color: '#f97316', icon: '🟠' },
+    'UR': { label: 'Unreserved (UR)', color: '#9CA3AF', icon: '⚪' },
+    'GS': { label: 'General (GS)', color: '#9CA3AF', icon: '⚪' },
 };
 
 const ID_TYPES = ['Aadhaar', 'PAN Card', 'Passport', 'Voter ID', 'Driving License', 'Student ID'];
@@ -32,39 +20,54 @@ function generatePNR() {
     return String(Math.floor(1000000000 + Math.random() * 9000000000));
 }
 
-function calcFare(classKey, from, to) {
-    const d1 = STATION_DISTANCES[from] ?? 0;
-    const d2 = STATION_DISTANCES[to] ?? 0;
-    const dist = Math.abs(d2 - d1);
-    const cfg = CLASS_FARES[classKey];
-    if (!cfg || dist === 0) return 0;
-    const base = Math.round(dist * cfg.basePerKm);
-    const fare = Math.max(base, cfg.min);
-    // Catering + reservation surcharge
-    const surcharge = ['1A', '2A', '3A', 'CC'].includes(classKey) ? 50 : 20;
-    return fare + surcharge;
-}
-
 export default function IssueTicket() {
     const { coaches, currentStation, tteInfo, issueTicket, stations } = useSmartRail();
 
-    const [step, setStep] = useState(1); // 1=details, 2=preview, 3=issued
+    const [step, setStep] = useState(1);
     const [form, setForm] = useState({
         name: '', age: '', gender: 'Male', mobile: '',
         idType: 'Aadhaar', idNumber: '',
-        classKey: '3A', coachId: '',
-        from: currentStation, to: 'New Delhi',
+        classKey: '', coachId: '',
+        from: currentStation || stations[0] || '', to: '',
         paymentMethod: 'Cash',
     });
     const [issuedTicket, setIssuedTicket] = useState(null);
-    const printRef = useRef(null);
+    const [fareData, setFareData] = useState(null);
+    const [loadingFare, setLoadingFare] = useState(false);
 
-    const selectedClass = CLASS_FARES[form.classKey];
-    const fare = calcFare(form.classKey, form.from, form.to);
-    const distance = Math.abs((STATION_DISTANCES[form.to] ?? 0) - (STATION_DISTANCES[form.from] ?? 0));
+    // Fetch fare whenever stations change
+    useEffect(() => {
+        if (!form.from || !form.to || form.from === form.to || !tteInfo?.trainNo) {
+            setFareData(null);
+            return;
+        }
+        
+        const fetchFares = async () => {
+            setLoadingFare(true);
+            try {
+                const res = await api.getFare(tteInfo.trainNo, form.from, form.to);
+                setFareData(res);
+                if (!form.classKey && res.fareDetails) {
+                    setForm(f => ({ ...f, classKey: Object.keys(res.fareDetails)[0] || 'SL' }));
+                }
+            } catch (err) {
+                console.error("Failed to fetch fares", err);
+                setFareData(null);
+            } finally {
+                setLoadingFare(false);
+            }
+        };
+
+        fetchFares();
+    }, [form.from, form.to, tteInfo.trainNo]);
+
+    const activeFareDetails = fareData?.fareDetails?.[form.classKey];
+    const fare = activeFareDetails?.totalFare || 0;
+    const distance = fareData?.distanceKm || 0;
+    const selectedClass = CLASS_CONFIG[form.classKey] || { label: form.classKey, color: '#666', icon: '🎫' };
 
     // Coaches matching selected class
-    const matchingCoaches = coaches.filter(c => c.type === form.classKey);
+    const matchingCoaches = coaches ? coaches.filter(c => c.classCode === form.classKey) : [];
 
     const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
@@ -139,27 +142,41 @@ export default function IssueTicket() {
             {step === 1 && (
                 <div className="space-y-6">
                     {/* Class Selection */}
-                    <div className="bg-[#1a1a1a] border border-[#D4D4D4]/10 rounded-2xl p-5">
+                    <div className="bg-[#1a1a1a] border border-[#D4D4D4]/10 rounded-2xl p-5 relative overflow-hidden">
                         <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
-                            <Train size={16} className="text-purple-400" /> Select Class
+                            <TrainIcon size={16} className="text-purple-400" /> Select Class
                         </h2>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                            {Object.entries(CLASS_FARES).map(([key, cls]) => (
-                                <button
-                                    key={key}
-                                    onClick={() => { set('classKey', key); set('coachId', ''); }}
-                                    className={`p-3 rounded-xl border-2 text-left transition-all ${form.classKey === key
-                                        ? 'border-opacity-100 bg-opacity-10'
-                                        : 'border-[#2B2B2B] hover:border-[#444]'
-                                        }`}
-                                    style={form.classKey === key ? { borderColor: cls.color, backgroundColor: cls.color + '15' } : {}}
-                                >
-                                    <div className="text-lg mb-1">{cls.icon}</div>
-                                    <div className="text-white text-xs font-semibold leading-tight">{cls.label}</div>
-                                    <div className="text-[#B3B3B3] text-[10px] mt-0.5">Min ₹{cls.min}</div>
-                                </button>
-                            ))}
-                        </div>
+                        {loadingFare ? (
+                            <div className="flex items-center gap-3 text-purple-400 h-24">
+                                <Loader2 className="animate-spin" /> Fetching Fares...
+                            </div>
+                        ) : !fareData ? (
+                            <div className="text-[#666] text-sm h-24 flex items-center justify-center border border-dashed border-[#333] rounded-xl">
+                                Select Valid Stations to view classes and computed fares
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                {Object.keys(fareData.fareDetails || {}).map((key) => {
+                                    const cls = CLASS_CONFIG[key] || { label: key, color: '#888', icon: '🎫' };
+                                    const fd = fareData.fareDetails[key];
+                                    return (
+                                        <button
+                                            key={key}
+                                            onClick={() => { set('classKey', key); set('coachId', ''); }}
+                                            className={`p-3 rounded-xl border-2 text-left transition-all ${form.classKey === key
+                                                ? 'border-opacity-100 bg-opacity-10'
+                                                : 'border-[#2B2B2B] hover:border-[#444]'
+                                                }`}
+                                            style={form.classKey === key ? { borderColor: cls.color, backgroundColor: cls.color + '15' } : {}}
+                                        >
+                                            <div className="text-lg mb-1">{cls.icon}</div>
+                                            <div className="text-white text-xs font-semibold leading-tight">{cls.label}</div>
+                                            <div className="text-[#B3B3B3] text-[10px] mt-0.5">₹{fd.totalFare}</div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
 
                     {/* Journey */}
@@ -194,7 +211,7 @@ export default function IssueTicket() {
                                     <select value={form.coachId} onChange={e => set('coachId', e.target.value)}
                                         className="w-full bg-[#2B2B2B] border border-[#444] text-white rounded-xl px-3 py-2.5 text-sm appearance-none pr-8">
                                         <option value="">Auto-assign</option>
-                                        {matchingCoaches.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                                        {matchingCoaches.map(c => <option key={c.coachId} value={c.coachId}>{c.coachId}</option>)}
                                     </select>
                                     <ChevronDown size={14} className="absolute right-3 top-3.5 text-[#B3B3B3] pointer-events-none" />
                                 </div>
@@ -248,9 +265,9 @@ export default function IssueTicket() {
 
                     <button
                         onClick={() => setStep(2)}
-                        disabled={!isStep1Valid}
+                        disabled={!isStep1Valid || !fareData}
                         className="w-full py-3 rounded-xl font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{ background: isStep1Valid ? selectedClass.color : '#2B2B2B' }}
+                        style={{ background: isStep1Valid && fareData ? selectedClass.color : '#2B2B2B' }}
                     >
                         Review Ticket →
                     </button>
@@ -352,9 +369,9 @@ export default function IssueTicket() {
                     </div>
 
                     {/* Printable ticket */}
-                    <div ref={printRef} className="bg-white text-black rounded-2xl overflow-hidden shadow-2xl print:shadow-none">
+                    <div className="bg-white text-black rounded-2xl overflow-hidden shadow-2xl print:shadow-none">
                         {/* Train header */}
-                        <div className="p-5 text-white" style={{ background: CLASS_FARES[issuedTicket.classKey].color }}>
+                        <div className="p-5 text-white" style={{ background: selectedClass.color }}>
                             <div className="flex items-center justify-between">
                                 <div>
                                     <div className="font-bold text-xl">SmartRail</div>

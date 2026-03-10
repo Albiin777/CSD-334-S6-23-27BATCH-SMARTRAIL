@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useSmartRail } from '../hooks/useSmartRail';
-import { AlertTriangle, Heart, Shield, Wrench, Users, Phone, Radio, Camera } from 'lucide-react';
+import { AlertTriangle, Heart, Shield, Wrench, Users, Phone, Radio, Camera, X } from 'lucide-react';
 
 const REPORT_TYPES = [
     { type: 'Medical', icon: Heart, color: 'red' },
@@ -16,13 +16,33 @@ export default function IncidentReport() {
     const { incidents, addIncident, tteInfo } = useSmartRail();
     const [selected, setSelected] = useState(null);
     const [desc, setDesc] = useState('');
+    const [photo, setPhoto] = useState(null); // base64 or objectUrl preview
+    const fileInputRef = useRef(null);
+
+    const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => setPhoto(reader.result);
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const triggerFileInput = () => fileInputRef.current.click();
 
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!selected || !desc) return;
-        addIncident({ type: selected, description: desc, coach: tteInfo.coach.split(',')[0].trim(), reporter: 'TTE' });
+        addIncident({ 
+            type: selected, 
+            description: desc, 
+            coach: tteInfo.coach.split(',')[0].trim(), 
+            reporter: 'TTE',
+            photo: photo 
+        });
         setSelected(null);
         setDesc('');
+        setPhoto(null);
     };
 
     return (
@@ -51,8 +71,18 @@ export default function IncidentReport() {
                             <label className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-wider block mb-1">Description</label>
                             <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={4} required className="w-full bg-gray-900 border border-[#D4D4D4]/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-[#6B7280] outline-none resize-none focus:border-[#D4D4D4]/30 transition" placeholder="Describe the incident…" />
                         </div>
+                        {photo && (
+                            <div className="relative group rounded-xl overflow-hidden border border-[#D4D4D4]/10 bg-black/40">
+                                <img src={photo} alt="Incident" className="w-full h-40 object-cover" />
+                                <button type="button" onClick={() => setPhoto(null)} className="absolute top-2 right-2 p-1.5 bg-black/60 rounded-full text-white hover:bg-black transition opacity-0 group-hover:opacity-100"><X size={14}/></button>
+                            </div>
+                        )}
+
                         <div className="flex gap-2">
-                            <button type="button" className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/10 text-[#B3B3B3] border border-[#D4D4D4]/10 rounded-xl text-sm font-semibold hover:bg-white/20 transition"><Camera size={16} /> Attach Photo</button>
+                            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" capture="environment" className="hidden" />
+                            <button type="button" onClick={triggerFileInput} className={`flex-1 flex items-center justify-center gap-2 py-3 border border-[#D4D4D4]/10 rounded-xl text-sm font-semibold transition ${photo ? 'bg-[#4ab86d]/10 text-[#4ab86d] border-[#4ab86d]/20' : 'bg-white/10 text-[#B3B3B3] hover:bg-white/20'}`}>
+                                <Camera size={16} /> {photo ? 'Change Photo' : 'Attach Photo'}
+                            </button>
                             <button type="button" className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/10 text-[#B3B3B3] border border-[#D4D4D4]/10 rounded-xl text-sm font-semibold hover:bg-white/20 transition"><Phone size={16} /> Emergency Call</button>
                         </div>
                         <div className="grid grid-cols-2 gap-2">

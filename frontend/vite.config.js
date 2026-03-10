@@ -8,8 +8,11 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     headers: {
+      // Required for Firebase Google Sign-In popup to work correctly.
+      // 'same-origin-allow-popups' allows the auth popup to postMessage back.
+      // Do NOT add Cross-Origin-Embedder-Policy here — it blocks Firebase's relay page.
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
     },
   }
 })
+

@@ -91,9 +91,25 @@ export const getProfile = async (req, res) => {
  */
 export const sendCustomEmailOTP = async (req, res) => {
     try {
-        const { email } = req.body;
+        let { email, phone } = req.body;
+
+        // If phone is provided instead of email, look up the email in profiles
+        if (!email && phone) {
+            const profilesSnap = await adminDb.collection('profiles')
+                .where('phone', '==', phone)
+                .limit(1)
+                .get();
+            if (profilesSnap.empty) {
+                return res.status(404).json({ error: `No account found for phone ${phone}. Please sign up first.` });
+            }
+            email = profilesSnap.docs[0].data().email;
+            if (!email) {
+                return res.status(400).json({ error: 'No email linked to this phone number. Cannot send OTP.' });
+            }
+        }
+
         if (!email) {
-            return res.status(400).json({ error: 'Email is required' });
+            return res.status(400).json({ error: 'Email or phone is required' });
         }
 
         // Generate 6 digit OTP
@@ -142,20 +158,44 @@ export const sendCustomEmailOTP = async (req, res) => {
     }
 };
 
+
 /**
  * Custom Email OTP - Verify OTP & Mint Custom Firebase Token
  */
 export const verifyCustomEmailOTP = async (req, res) => {
     try {
-        const { email, token } = req.body;
+        let { email, phone, token } = req.body;
+
+        // If phone provided, look up email in profiles (OTP was sent to that email)
+        if (!email && phone) {
+            const profilesSnap = await adminDb.collection('profiles')
+                .where('phone', '==', phone)
+                .limit(1)
+                .get();
+            if (!profilesSnap.empty) {
+                email = profilesSnap.docs[0].data().email;
+            }
+            // For brand-new phone signups (profile not yet created), check email_otps by phone key
+            if (!email) {
+                const otpByPhone = await adminDb.collection('email_otps').doc(phone).get();
+                if (otpByPhone.exists) {
+                    email = otpByPhone.data().email;
+                }
+            }
+            if (!email) {
+                return res.status(400).json({ error: 'No email linked to this phone number.' });
+            }
+        }
+
         if (!email || !token) {
-            return res.status(400).json({ error: 'Email and OTP token are required' });
+            return res.status(400).json({ error: 'Email (or phone) and OTP token are required' });
         }
 
         const emailLower = email.toLowerCase();
 
         // 1. Check OTP in Firestore
         const otpDoc = await adminDb.collection('email_otps').doc(emailLower).get();
+
 
         if (!otpDoc.exists) {
             return res.status(400).json({ error: 'Invalid or expired OTP' });
