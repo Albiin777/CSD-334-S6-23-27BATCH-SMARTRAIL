@@ -55,7 +55,10 @@ Passengers cannot view seat layouts before booking and receive little support in
 
 - Train and user management  
 - Booking monitoring  
-- Complaint handling  
+- Complaint handling
+- Tte management
+- Fair editor
+- Notification handling
 
 ---
 
