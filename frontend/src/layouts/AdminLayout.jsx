@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { auth } from "../utils/firebaseClient";
+import { auth, db } from "../utils/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 
 import { LayoutDashboard, Train, Armchair, Users, ClipboardList, Banknote, MessageSquare, Bell, LineChart, ShieldCheck, LogOut, Menu, X } from "lucide-react";
+import MiniFooter from "../components/common/MiniFooter";
 
 const ICONS = {
     Dashboard: ({ className }) => <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>,
@@ -29,17 +31,35 @@ const NAV = [
     { path: "/admin/reports", label: "Reports", icon: ICONS.Reports },
 ];
 
+// Internal small arrow component 
+function ArrowRight({ className }) {
+    return (
+        <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+    );
+}
+
 export default function AdminLayout() {
     const navigate = useNavigate();
     const [sideOpen, setSideOpen] = useState(false);
-    const [adminEmail, setAdminEmail] = useState("Loading...");
+    const [adminIdentifier, setAdminIdentifier] = useState("Loading...");
+    const [adminName, setAdminName] = useState("");
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
-            if (user?.email) {
-                setAdminEmail(user.email);
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                setAdminIdentifier(user.email);
+                // Fetch name from profile
+                try {
+                    const pDoc = await getDoc(doc(db, 'profiles', user.uid));
+                    if (pDoc.exists() && (pDoc.data().full_name || pDoc.data().name)) {
+                        setAdminName(pDoc.data().full_name || pDoc.data().name);
+                    }
+                } catch (e) {
+                    console.error("Layout name fetch error:", e);
+                }
             } else {
-                setAdminEmail("Unknown User");
+                setAdminIdentifier("Unknown User");
+                setAdminName("");
             }
         });
         return () => unsubscribe();
@@ -52,7 +72,7 @@ export default function AdminLayout() {
     };
 
     return (
-        <div className="min-h-screen flex bg-[#080f1e] text-gray-100 font-sans">
+        <div className="h-screen flex overflow-hidden bg-[#080f1e] text-gray-100 font-sans">
             {/* Overlay for mobile */}
             {sideOpen && (
                 <div
@@ -63,12 +83,12 @@ export default function AdminLayout() {
 
             {/* Sidebar */}
             <aside className={`
-                fixed inset-y-0 left-0 z-40 flex flex-col w-64 bg-[#0d1526] border-r border-white/5
+                fixed inset-y-0 left-0 z-40 flex flex-col w-64 h-full bg-[#0d1526] border-r border-white/5
                 transform transition-transform duration-300 ease-in-out
                 ${sideOpen ? "translate-x-0" : "-translate-x-full"}
                 md:translate-x-0 md:static md:inset-auto
             `}>
-                <div className="flex items-center gap-3 px-6 py-6 border-b border-white/5 bg-[#0a1120]">
+                <div className="flex items-center gap-3 px-6 py-5 border-b border-white/5 bg-[#0a1120] min-h-[81px]">
                     <div className="w-10 h-10 flex items-center justify-center">
                         <img src="/trainwhite.png" alt="Logo" className="w-full h-full object-contain" />
                     </div>
@@ -81,40 +101,45 @@ export default function AdminLayout() {
                     </button>
                 </div>
 
-                <div className="px-6 py-4 border-b border-white/5 bg-[#0d1526]/50">
-                    <div className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Session</div>
-                    <div className="text-gray-200 text-sm font-medium truncate">{adminEmail}</div>
-                </div>
+                <div className="flex-1 overflow-y-auto scrollbar-hide">
+                    <div className="min-h-full flex flex-col">
+                        <div className="px-6 py-4 border-b border-white/5 bg-[#0d1526]/50">
+                            <div className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">Session</div>
+                            <div className="text-gray-200 text-sm font-medium truncate">{adminName || adminIdentifier}</div>
+                            {adminName && <div className="text-gray-500 text-[10px] truncate mt-0.5">{adminIdentifier}</div>}
+                        </div>
 
-                <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-1.5 scrollbar-hide">
-                    {NAV.map(item => (
-                        <NavLink
-                            key={item.path}
-                            to={item.path}
-                            end={item.exact}
-                            onClick={() => setSideOpen(false)}
-                            className={({ isActive }) =>
-                                `group flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold transition-all
-                                ${isActive ? "bg-[#10b981]/10 text-[#10b981] border-l-2 border-[#10b981]" : "text-gray-400 hover:text-gray-100 hover:bg-white/5"}`
-                            }
-                        >
-                            <item.icon className="w-5 h-5" />
-                            <span>{item.label}</span>
-                        </NavLink>
-                    ))}
-                </nav>
+                        <nav className="flex-1 px-4 py-6 space-y-1.5">
+                            {NAV.map(item => (
+                                <NavLink
+                                    key={item.path}
+                                    to={item.path}
+                                    end={item.exact}
+                                    onClick={() => setSideOpen(false)}
+                                    className={({ isActive }) =>
+                                        `group flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold transition-all
+                                        ${isActive ? "bg-[#10b981]/10 text-[#10b981] border-l-2 border-[#10b981]" : "text-gray-400 hover:text-gray-100 hover:bg-white/5"}`
+                                    }
+                                >
+                                    <item.icon className="w-5 h-5" />
+                                    <span>{item.label}</span>
+                                </NavLink>
+                            ))}
+                        </nav>
 
-                <div className="p-4 border-t border-white/5 bg-[#0a1120]">
-                    <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold text-sm transition-all">
-                        <LogOut className="w-4 h-4" />
-                        Sign Out Session
-                    </button>
+                        <div className="px-6 border-t border-white/5 bg-[#0a1120] min-h-[77px] flex items-center mt-auto">
+                            <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold text-sm transition-all whitespace-nowrap">
+                                <LogOut className="w-4 h-4" />
+                                Sign Out Session
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </aside>
 
             {/* Main Area */}
-            <div className="flex-1 flex flex-col min-w-0">
-                <header className="flex items-center justify-between px-8 py-5 bg-[#080f1e]/80 backdrop-blur-lg border-b border-white/5 sticky top-0 z-20">
+            <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+                <header className="flex items-center justify-between px-8 py-5 bg-[#080f1e]/80 backdrop-blur-lg border-b border-white/5 sticky top-0 z-20 min-h-[81px]">
                     <div className="flex items-center gap-3 text-sm font-medium">
                         <span className="text-gray-400">Workspace</span>
                         <ArrowRight className="w-4 h-4 text-gray-600" />
@@ -129,22 +154,14 @@ export default function AdminLayout() {
                     </div>
                 </header>
 
-                <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto w-full">
-                    <Outlet />
-                    
-                    {/* Integrated Footer */}
-                    <footer className="mt-12 pt-8 border-t border-white/5 text-center">
-                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em]">
-                            © 2026 SmartRail • Intelligent Network Operations
-                        </p>
-                    </footer>
-                </main>
+                <div className="flex-1 overflow-y-auto w-full flex flex-col">
+                    <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto w-full">
+                        <Outlet />
+                    </main>
+                    <MiniFooter />
+                </div>
             </div>
         </div>
     );
 }
 
-// Internal small arrow component since I didn't import it
-const ArrowRight = ({ className }) => (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-);

@@ -38,6 +38,7 @@ import { AdminProtectedRoute } from "./components/AdminProtectedRoute";
 // Keep existing pages
 import MyAccount from "./pages/MyAccount";
 import MyBookings from "./pages/MyBookings";
+import { AUTHORIZED_ADMINS, AUTHORIZED_TTES } from "./utils/roles.config";
 import AboutSection from "./components/AboutSection";
 
 import { auth, db } from "./utils/firebaseClient";
@@ -259,17 +260,19 @@ export default function App() {
           console.error("Error fetching user role from Firestore:", error);
         }
 
-        const validAdmins = ['admin@gmail.com', 'hashlinairah@gmail.com'];
-        const validTtes = ['binthalhamza@gmail.com', 'raishahashly15@gmail.com'];
         const email = currentUser.email?.toLowerCase() || "";
+
+        // Use the centralized config lists
+        const isAdmin = AUTHORIZED_ADMINS.includes(email) || role === 'admin';
+        const isTte = AUTHORIZED_TTES.includes(email) || email.includes('tte') || role === 'tte';
 
         // If newly signed in within this listener...
         // Navigate based on roles derived from email or the Firestore fetch
         // IMPORTANT: Only redirect away from login/signup if the profile is reasonably complete (has a displayName)
         // Otherwise, let Auth.jsx handle the 'profile' completion step first.
-        if ((validAdmins.includes(email) || role === 'admin') && !location.pathname.startsWith('/admin')) {
+        if (isAdmin && !location.pathname.startsWith('/admin')) {
           navigate('/admin');
-        } else if ((validTtes.includes(email) || email.includes('tte') || role === 'tte') && !location.pathname.startsWith('/tte')) {
+        } else if (isTte && !location.pathname.startsWith('/tte')) {
           navigate('/tte');
         } else if ((location.pathname === '/login' || location.pathname === '/signup') && currentUser.displayName) {
            navigate('/');

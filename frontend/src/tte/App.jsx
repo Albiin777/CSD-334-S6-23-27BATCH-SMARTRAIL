@@ -12,6 +12,7 @@ import Handover from './pages/Handover';
 import Analytics from './pages/Analytics';
 import Reviews from './pages/Reviews';
 import Complaints from './pages/Complaints';
+import Notifications from './pages/Notifications';
 
 export default function App() {
     return (
@@ -29,6 +30,7 @@ export default function App() {
                     <Route path="analytics" element={<Analytics />} />
                     <Route path="reviews" element={<Reviews />} />
                     <Route path="complaints" element={<Complaints />} />
+                    <Route path="notifications" element={<Notifications />} />
 
                 </Route>
             </Routes>

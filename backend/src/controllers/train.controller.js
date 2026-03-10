@@ -127,12 +127,10 @@ export async function searchTrains(req, res) {
     const lowerQuery = query.toLowerCase();
 
     const results = dataStore.trains.filter(train => {
+        if (lowerQuery === 'all') return true;
         if (extractedNumber && train.trainNumber === extractedNumber) return true;
         return train.trainNumber.toLowerCase().includes(lowerQuery) ||
-            train.trainName.toLowerCase().includes(lowerQuery) ||
-            // Fallback if the raw query happens to be contained entirely (e.g. "Rajdhani Exp")
-            query.includes(train.trainNumber) ||
-            lowerQuery.includes(train.trainName.toLowerCase());
+            train.trainName.toLowerCase().includes(lowerQuery);
     });
 
     res.json(results.map(t => ({
@@ -327,27 +325,39 @@ export async function getFare(req, res) {
     let source = req.query.source;
     let destination = req.query.destination;
 
-    // ── Resolve distance from schedule ──────────────────────────────────────
-    if (!distanceKm && source && destination) {
-        const train = dataStore.trains.find(t => t.trainNumber === trainNumber);
+    let overrides = null;
+    try {
+        if (adminDb) {
+            const overrideDoc = await adminDb.collection('fare_overrides').doc(String(trainNumber)).get();
+            if (overrideDoc.exists) {
+                overrides = overrideDoc.data().fares;
+            }
+        }
+    } catch (e) {
+        console.error("Fare override check error:", e);
+    }
 
+    // ── Resolve distance from schedule ──────────────────────────────────────
+    const trainObj = dataStore.trains.find(t => t.trainNumber === trainNumber);
+    const trainTotalDistance = trainObj?.distanceKm || 800;
+
+    if (!distanceKm && source && destination) {
         const strictMatch = (s, q) => {
             const sCode = s.stationCode ? s.stationCode.toLowerCase() : '';
             return sCode === q.toLowerCase();
         };
 
-        if (train && train.schedule) {
-            const srcNode = train.schedule.find(s => strictMatch(s, source));
-            const dstNode = train.schedule.find(s => strictMatch(s, destination));
+        if (trainObj && trainObj.schedule) {
+            const srcNode = trainObj.schedule.find(s => strictMatch(s, source));
+            const dstNode = trainObj.schedule.find(s => strictMatch(s, destination));
             if (srcNode && dstNode && dstNode.distanceFromSourceKm >= 0 && srcNode.distanceFromSourceKm >= 0) {
                 distanceKm = Math.abs(dstNode.distanceFromSourceKm - srcNode.distanceFromSourceKm);
             }
         }
     }
-    if (!distanceKm || distanceKm <= 0) distanceKm = 800; // sensible fallback
+    if (!distanceKm || distanceKm <= 0) distanceKm = trainTotalDistance; // Use total as fallback
 
     // --- Train Type Detection ---
-    const trainObj = dataStore.trains.find(t => t.trainNumber === trainNumber);
     const tName = trainObj ? (trainObj.trainName || "").toUpperCase() : "";
     const isOrdinary = tName.includes("MEMU") || tName.includes("PASSENGER") || tName.includes("DEMU");
     const isSF = tName.includes("SF ") || tName.includes("SUPERFAST") || /^12|^22/.test(trainNumber);
@@ -424,6 +434,8 @@ export async function getFare(req, res) {
     classes.forEach(cls => {
         let baseFare = 0;
         let resCharge = 0;
+        let sfCharge = 0;
+        let gst = 0;
         const isAC = ['1A', '2A', '3A', '3E', 'CC', 'EC'].includes(cls);
 
         if (['GS', 'UR', '2S', 'GN'].includes(cls)) {
@@ -435,13 +447,36 @@ export async function getFare(req, res) {
             resCharge = (cls === 'SL' || cls === '2S') ? 20 : 40;
         }
 
-        const sfCharge = isSF ? Math.round(baseFare * 0.30) : 0;
         const fuelAdjustment = 0; // Standardized out based on updated table 
 
-        const preTax = baseFare + sfCharge + resCharge;
-        const gst = isAC ? Math.round(preTax * 0.05) : 0;  // 5% GST on AC
+        let totalFare = 0;
+        let isOverride = false;
+        let override = overrides?.[cls];
 
-        const totalFare = Math.max((['GS', 'UR', 'GN'].includes(cls) && isOrdinary) ? 10 : 50, Math.ceil((preTax + gst) / 5) * 5); // round to ₹5
+        if (override) {
+            isOverride = true;
+            if (typeof override === 'object') {
+                // Granular override: Rate per KM + Svc Charge
+                baseFare = distanceKm * (override.ratePerKm || 0);
+                resCharge = override.serviceCharge || 0;
+                sfCharge = 0; // Assume included
+                gst = 0;     // Assume included or calculated later
+                totalFare = Math.ceil((baseFare + resCharge) / 5) * 5;
+            } else {
+                // Legacy Fixed Override: Map it proportionally across distance
+                const fullRouteFixed = Number(override);
+                const rate = fullRouteFixed / trainTotalDistance;
+                totalFare = Math.ceil((distanceKm * rate) / 5) * 5;
+                baseFare = distanceKm * rate;
+                resCharge = 0;
+            }
+        } else {
+            // Standard Calculation
+            sfCharge = isSF ? Math.round(baseFare * 0.30) : 0;
+            const preTax = baseFare + sfCharge + resCharge;
+            gst = isAC ? Math.round(preTax * 0.05) : 0;
+            totalFare = Math.max((['GS', 'UR', 'GN'].includes(cls) && isOrdinary) ? 10 : 50, Math.ceil((preTax + gst) / 5) * 5);
+        }
 
         let ratePerKm = (totalFare / distanceKm).toFixed(2);
 
@@ -449,12 +484,13 @@ export async function getFare(req, res) {
             label: cls,
             distanceKm: Math.round(distanceKm),
             ratePerKm: Number(ratePerKm),
-            baseFare,
+            baseFare: Math.round(baseFare),
             fuelAdjustment,
-            reservationCharge: resCharge,
-            superfastCharge: sfCharge,
-            gst,
-            totalFare
+            reservationCharge: (isOverride && typeof override === 'object') ? override.serviceCharge : resCharge,
+            superfastCharge: isOverride ? 0 : sfCharge,
+            gst: isOverride ? 0 : gst,
+            totalFare,
+            isOverride
         };
         fares[cls] = totalFare;
     });

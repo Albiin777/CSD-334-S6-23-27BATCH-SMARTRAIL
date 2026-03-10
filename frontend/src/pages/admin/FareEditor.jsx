@@ -7,8 +7,9 @@ export default function FareEditor() {
     const [searchQ, setSearchQ] = useState("");
     const [trains, setTrains] = useState([]);
     const [selectedTrain, setSelectedTrain] = useState(null);
-    const [fares, setFares] = useState(null);
-    const [editedFares, setEditedFares] = useState({});
+    const [trainDistance, setTrainDistance] = useState(0);
+    const [fares, setFares] = useState(null); // Base/Official fares from API
+    const [editedFares, setEditedFares] = useState({}); // { cls: { ratePerKm, serviceCharge, total } }
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [success, setSuccess] = useState(false);
@@ -29,28 +30,52 @@ export default function FareEditor() {
         setLoading(true);
         setSuccess(false);
         try {
-            // First check if we have overridden fare in Firestore
+            // Get official fares + distance from API
+            const apiRes = await api.getFare(train.trainNumber);
+            const dist = apiRes.distanceKm || 800;
+            setTrainDistance(dist);
+            
+            const baseDetails = apiRes.fareDetails || {};
+            
+            // Check for Firestore overrides
             const overrideDoc = await getDoc(doc(db, "fare_overrides", String(train.trainNumber)));
-            const override = overrideDoc.exists() ? overrideDoc.data() : null;
+            const overrideData = overrideDoc.exists() ? overrideDoc.data().fares : null;
 
-            // Also get the official fares from API
-            const apiFares = await api.getFare(train.trainNumber);
-            const baseFares = apiFares?.fares || {};
+            const finalFares = {};
+            Object.keys(baseDetails).forEach(cls => {
+                const base = baseDetails[cls];
+                const ovr = overrideData?.[cls];
+                
+                if (ovr) {
+                    if (typeof ovr === 'object') {
+                        finalFares[cls] = {
+                            ratePerKm: ovr.ratePerKm || base.ratePerKm,
+                            serviceCharge: ovr.serviceCharge || 0,
+                            total: Math.ceil(((dist * (ovr.ratePerKm || base.ratePerKm)) + (ovr.serviceCharge || 0)) / 5) * 5
+                        };
+                    } else {
+                        // Legacy number override
+                        finalFares[cls] = {
+                            ratePerKm: Number(ovr) / dist,
+                            serviceCharge: 0,
+                            total: Number(ovr)
+                        };
+                    }
+                } else {
+                    finalFares[cls] = {
+                        ratePerKm: base.ratePerKm,
+                        serviceCharge: base.reservationCharge + base.superfastCharge + base.gst,
+                        total: base.totalFare
+                    };
+                }
+            });
 
-            if (override) {
-                const merged = { ...baseFares, ...override.fares };
-                setFares(merged);
-                setEditedFares(merged);
-            } else {
-                setFares(baseFares);
-                setEditedFares(baseFares);
-            }
+            setFares(finalFares);
+            setEditedFares(JSON.parse(JSON.stringify(finalFares)));
         } catch (err) {
             console.error(err);
-            // Fallback fares if API fails
-            const fallback = { "2S": 85, "CC": 255, "SL": 195, "3A": 485, "2A": 710, "1A": 1175 };
-            setFares(fallback);
-            setEditedFares(fallback);
+            setFares({});
+            setEditedFares({});
         }
         setLoading(false);
     };
@@ -172,31 +197,87 @@ export default function FareEditor() {
                                     <span>These are base fares for the full route. Passengers pay proportional amounts based on their boarding and deboarding stations.</span>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                                    {Object.keys(editedFares).map(classCode => (
-                                        <div key={classCode} className="bg-[#080f1e] border border-white/5 rounded-xl p-4">
-                                            <div className="text-xs text-gray-500 font-bold uppercase tracking-wide mb-1">{classCode}</div>
-                                            <div className="text-xs text-gray-600 mb-3">{CLASS_LABELS[classCode] || classCode}</div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-green-400 font-black text-lg">₹</span>
-                                                <input
-                                                    type="number"
-                                                    value={editedFares[classCode]}
-                                                    min={0}
-                                                    step={5}
-                                                    onChange={e => setEditedFares(prev => ({ ...prev, [classCode]: Number(e.target.value) }))}
-                                                    className="w-full bg-[#111827] text-white border border-gray-700 focus:border-[#4ab86d] rounded-lg px-3 py-2 text-lg font-black focus:outline-none transition"
-                                                />
-                                            </div>
-                                            {fares?.[classCode] !== editedFares[classCode] && (
-                                                <div className="text-[10px] mt-1.5 flex gap-1.5 items-center">
-                                                    <span className="text-gray-500 line-through">₹{fares[classCode]}</span>
-                                                    <span className={`font-bold ${editedFares[classCode] > fares[classCode] ? "text-red-400" : "text-green-400"}`}>
-                                                        {editedFares[classCode] > fares[classCode] ? "↑" : "↓"} {Math.abs(((editedFares[classCode] - fares[classCode]) / fares[classCode]) * 100).toFixed(0)}%
-                                                    </span>
+                                    {Object.keys(editedFares).map(classCode => {
+                                        const fare = editedFares[classCode];
+                                        const updateField = (field, val) => {
+                                            setEditedFares(prev => {
+                                                const next = { ...prev, [classCode]: { ...prev[classCode], [field]: val } };
+                                                // If we update rate/svc, auto-calc total
+                                                if (field === 'ratePerKm' || field === 'serviceCharge') {
+                                                    next[classCode].total = Math.ceil(((trainDistance * next[classCode].ratePerKm) + next[classCode].serviceCharge) / 5) * 5;
+                                                }
+                                                // If we update total manually, back-calc rate (assuming svc is fixed)
+                                                if (field === 'total') {
+                                                    next[classCode].ratePerKm = Number(((val - next[classCode].serviceCharge) / trainDistance).toFixed(4));
+                                                }
+                                                return next;
+                                            });
+                                        };
+
+                                        return (
+                                            <div key={classCode} className="bg-[#080f1e] border border-white/5 rounded-xl p-4">
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <div>
+                                                        <div className="text-xs text-gray-500 font-bold uppercase tracking-wide mb-0.5">{classCode}</div>
+                                                        <div className="text-[10px] text-gray-600 truncate max-w-[120px]">{CLASS_LABELS[classCode] || classCode}</div>
+                                                    </div>
                                                 </div>
-                                            )}
-                                        </div>
-                                    ))}
+                                                
+                                                <div className="space-y-3">
+                                                    <div>
+                                                        <label className="text-[9px] text-gray-500 uppercase font-black block mb-1">Rate per KM</label>
+                                                        <div className="relative">
+                                                            <span className="absolute left-3 top-1.5 text-xs text-green-500/50">₹</span>
+                                                            <input
+                                                                type="number"
+                                                                step="0.01"
+                                                                value={fare.ratePerKm}
+                                                                onChange={e => updateField('ratePerKm', Number(e.target.value))}
+                                                                className="w-full bg-[#111827] text-white border border-gray-700 focus:border-[#4ab86d] rounded-lg pl-6 pr-3 py-1.5 text-xs font-bold focus:outline-none transition"
+                                                                placeholder="0.00"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="text-[9px] text-gray-500 uppercase font-black block mb-1">Service Charge</label>
+                                                        <div className="relative">
+                                                            <span className="absolute left-3 top-1.5 text-xs text-green-500/50">₹</span>
+                                                            <input
+                                                                type="number"
+                                                                value={fare.serviceCharge}
+                                                                onChange={e => updateField('serviceCharge', Number(e.target.value))}
+                                                                className="w-full bg-[#111827] text-white border border-gray-700 focus:border-[#4ab86d] rounded-lg pl-6 pr-3 py-1.5 text-xs font-bold focus:outline-none transition"
+                                                                placeholder="0"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="pt-2 border-t border-white/5">
+                                                        <label className="text-[9px] text-gray-400 uppercase font-black block mb-1">Total Trip Cost ({trainDistance}km)</label>
+                                                        <div className="relative">
+                                                            <span className="absolute left-3 top-1.5 text-sm text-green-400 font-black">₹</span>
+                                                            <input
+                                                                type="number"
+                                                                value={fare.total}
+                                                                onChange={e => updateField('total', Number(e.target.value))}
+                                                                className="w-full bg-[#0d1321] text-white border border-gray-600 focus:border-[#4ab86d] rounded-lg pl-7 pr-3 py-2 text-sm font-black focus:outline-none transition"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {fares?.[classCode]?.total !== fare.total && (
+                                                    <div className="text-[9px] mt-2 flex justify-between items-center opacity-60">
+                                                        <span className="text-gray-500">Official: ₹{fares?.[classCode]?.total || '?'}</span>
+                                                        <span className={`font-bold ${fare.total > fares?.[classCode]?.total ? "text-red-400" : "text-green-400"}`}>
+                                                            {fare.total > fares?.[classCode]?.total ? "↑" : "↓"} {Math.abs(((fare.total - (fares?.[classCode]?.total || fare.total)) / (fares?.[classCode]?.total || 1)) * 100).toFixed(0)}%
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
 
                                 {hasChanges && (

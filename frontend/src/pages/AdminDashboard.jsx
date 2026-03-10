@@ -41,9 +41,11 @@ const ICONS = {
 export default function AdminDashboard() {
     const navigate = useNavigate();
     const [trains, setTrains] = useState([]);
+    const [allTrains, setAllTrains] = useState([]);
     const [complaints, setComplaints] = useState([]);
     const [ttes, setTtes] = useState([]);
     const [assignments, setAssignments] = useState([]);
+    const [page, setPage] = useState(0);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -51,11 +53,19 @@ export default function AdminDashboard() {
             try {
                 // 1. Trains (API remains same)
                 const raw = await api.searchTrains("all");
+                const now = new Date();
+                const currentHour = now.getHours();
+
                 const enriched = raw.map(t => {
                     const seed = t.trainNumber.split("").reduce((a, b) => a + b.charCodeAt(0), 0);
-                    return { ...t, status: seed % 5 === 0 ? "Delayed" : seed % 7 === 0 ? "Departed" : "Running" };
+                    const isRunning = (seed + currentHour) % 2 === 0;
+                    const status = isRunning ? "Running" : (seed % 3 === 0 ? "Delayed" : "Departed");
+                    return { ...t, status };
                 });
-                setTrains(enriched);
+                
+                setAllTrains(enriched);
+                // Show ONLY running trains in the list
+                setTrains(enriched.filter(t => t.status === "Running"));
  
                 // 2. Complaints (Firestore)
                 const complaintsSnap = await getDocs(query(collection(db, "complaints"), orderBy("created_at", "desc"), limit(8)));
@@ -77,9 +87,13 @@ export default function AdminDashboard() {
         })();
     }, []);
 
-    const running = trains.filter(t => t.status === "Running").length;
-    const delayed = trains.filter(t => t.status === "Delayed").length;
-    const departed = trains.filter(t => t.status === "Departed").length;
+    const runningCount = allTrains.filter(t => t.status === "Running").length;
+    const delayedCount = allTrains.filter(t => t.status === "Delayed").length;
+    const departedCount = allTrains.filter(t => t.status === "Departed").length;
+
+    const itemsPerPage = 4;
+    const paginatedTrains = trains.slice(page * itemsPerPage, (page + 1) * itemsPerPage);
+    const totalPages = Math.ceil(trains.length / itemsPerPage);
 
     if (loading) return (
         <div className="flex items-center justify-center h-64 text-gray-400">
@@ -99,9 +113,9 @@ export default function AdminDashboard() {
 
             {/* Stats Row */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
-                <StatCard label="Running" value={running} icon={ICONS.Running} color="green" sub="Active trains on route" />
-                <StatCard label="Delayed" value={delayed} icon={ICONS.Delayed} color="orange" sub="Behind schedule" />
-                <StatCard label="Departed" value={departed} icon={ICONS.Departed} color="blue" sub="Successfully completed" />
+                <StatCard label="Running" value={runningCount} icon={ICONS.Running} color="green" sub="Active trains on route" />
+                <StatCard label="Delayed" value={delayedCount} icon={ICONS.Delayed} color="orange" sub="Behind schedule" />
+                <StatCard label="Departed" value={departedCount} icon={ICONS.Departed} color="blue" sub="Successfully completed" />
                 <StatCard label="Complaints" value={complaints.length} icon={ICONS.Complaints} color="red" sub="Require attention" />
             </div>
 
@@ -118,19 +132,48 @@ export default function AdminDashboard() {
                         <button onClick={() => navigate("/admin/trains")} className="text-xs text-[#10b981] hover:text-[#059669] font-bold tracking-wide uppercase transition-colors">View all →</button>
                     </div>
                     <div className="divide-y divide-white/5">
-                        {trains.slice(0, 6).map((t, i) => (
-                            <div key={i} className="flex items-center justify-between px-5 py-3 hover:bg-white/2 transition">
-                                <div>
-                                    <div className="font-bold text-white text-sm">{t.trainName}</div>
-                                    <div className="text-xs text-gray-500 font-mono">{t.trainNumber} · {t.source} → {t.destination}</div>
+                        {paginatedTrains.length > 0 ? (
+                            paginatedTrains.map((t, i) => (
+                                <div key={i} className="flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.03] transition group">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-8 h-8 rounded-lg bg-green-500/10 border border-green-500/20 flex items-center justify-center text-green-400 group-hover:scale-110 transition-transform font-bold text-[10px]">
+                                            {t.trainNumber.slice(-2)}
+                                        </div>
+                                        <div>
+                                            <div className="font-bold text-white text-sm group-hover:text-[#10b981] transition-colors">{t.trainName}</div>
+                                            <div className="text-[10px] text-gray-500 font-mono font-medium tracking-tight">#{t.trainNumber} · {t.source} → {t.destination}</div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-[10px] px-2.5 py-1 rounded-full font-bold border text-green-400 bg-green-500/10 border-green-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]">Running</span>
+                                    </div>
                                 </div>
-                                <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold border ${t.status === "Running" ? "text-green-400 bg-green-500/10 border-green-500/20" :
-                                    t.status === "Delayed" ? "text-orange-400 bg-orange-500/10 border-orange-500/20" :
-                                        "text-blue-400 bg-blue-500/10 border-blue-500/20"
-                                    }`}>{t.status}</span>
-                            </div>
-                        ))}
+                            ))
+                        ) : (
+                            <div className="p-8 text-center text-gray-500 text-sm">No trains are currently running.</div>
+                        )}
                     </div>
+                    {totalPages > 1 && (
+                        <div className="px-6 py-4 border-t border-white/5 bg-white/[0.01] flex items-center justify-between">
+                            <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Page {page + 1} of {totalPages}</div>
+                            <div className="flex gap-2">
+                                <button 
+                                    disabled={page === 0}
+                                    onClick={() => setPage(p => Math.max(0, p - 1))}
+                                    className="p-1.5 rounded-lg border border-white/10 text-gray-400 hover:text-white hover:bg-white/5 disabled:opacity-20 transition"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                                </button>
+                                <button 
+                                    disabled={page >= totalPages - 1}
+                                    onClick={() => setPage(p => p + 1)}
+                                    className="p-1.5 rounded-lg border border-white/10 text-gray-400 hover:text-white hover:bg-white/5 disabled:opacity-20 transition"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Complaints Panel */}

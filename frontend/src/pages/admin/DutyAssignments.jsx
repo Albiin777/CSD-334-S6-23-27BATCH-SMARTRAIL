@@ -1,9 +1,21 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import api from "../../api/train.api";
 import { db } from "../../utils/firebaseClient";
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc, orderBy } from "firebase/firestore";
 
 const today = new Date().toISOString().split("T")[0];
+const maxDate = new Date(new Date().getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]; // 2 months from now
+
+const formatTime = (timeStr) => {
+    if (!timeStr) return "";
+    try {
+        const [hours, minutes] = timeStr.split(':');
+        let h = parseInt(hours);
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        return `${h}:${minutes} ${ampm}`;
+    } catch { return timeStr; }
+};
 
 export default function DutyAssignments() {
     const [assignments, setAssignments] = useState([]);
@@ -23,18 +35,78 @@ export default function DutyAssignments() {
         duty_date: today, shift_start: "14:00", shift_end: "23:00",
         notes: ""
     });
+    const [tteSearch, setTteSearch] = useState("");
+    const [showTteResults, setShowTteResults] = useState(false);
+    const [minStartTime, setMinStartTime] = useState(""); // Departure from source
+    const [limitEndTime, setLimitEndTime] = useState(""); // Arrival at destination
+    const [runningDays, setRunningDays] = useState([]);   // Days the train operates [Monday, ...]
+
+    const [sourceResults, setSourceResults] = useState([]);
+    const [destResults, setDestResults] = useState([]);
+    const [showSourceResults, setShowSourceResults] = useState(false);
+    const [showDestResults, setShowDestResults] = useState(false);
+
+    const tteRef = useRef(null);
+    const trainRef = useRef(null);
+    const sourceRef = useRef(null);
+    const destRef = useRef(null);
+
+    // Close dropdowns when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (tteRef.current && !tteRef.current.contains(event.target)) setShowTteResults(false);
+            if (trainRef.current && !trainRef.current.contains(event.target)) setTrainResults([]);
+            if (sourceRef.current && !sourceRef.current.contains(event.target)) setShowSourceResults(false);
+            if (destRef.current && !destRef.current.contains(event.target)) setShowDestResults(false);
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     useEffect(() => {
         (async () => {
             try {
-                const [aSnap, tSnap] = await Promise.all([
+                const [aSnap, tSnap, pSnap] = await Promise.all([
                     getDocs(query(collection(db, "tte_assignments"), orderBy("created_at", "desc"))),
+                    getDocs(collection(db, "ttes")), // TTEs from dedicated collection
                     getDocs(query(collection(db, "profiles"), where("role", "==", "tte"))) // TTEs from profiles
                 ]);
                 setAssignments(aSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-                const ttesData = tSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-                ttesData.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-                setTtes(ttesData);
+                
+                // Merge TTEs from both sources, deduplicating by email
+                const mergedTtes = new Map();
+                
+                // 1. Process Profile TTEs first (basic data)
+                pSnap.docs.forEach(d => {
+                    const data = d.data();
+                    const email = data.email?.toLowerCase();
+                    if (email) {
+                        mergedTtes.set(email, { 
+                            id: d.id, 
+                            ...data, 
+                            name: data.full_name || data.name || email.split('@')[0] 
+                        });
+                    }
+                });
+                
+                // 2. Process Dedicated TTEs (overwrites profile data with more specific TTE info)
+                tSnap.docs.forEach(d => {
+                    const data = d.data();
+                    const email = data.email?.toLowerCase();
+                    if (email) {
+                        const existing = mergedTtes.get(email) || {};
+                        mergedTtes.set(email, { 
+                            ...existing, 
+                            id: d.id, 
+                            ...data, 
+                            name: data.name || data.full_name || existing.name || email.split('@')[0] 
+                        });
+                    }
+                });
+
+                const ttesList = Array.from(mergedTtes.values());
+                ttesList.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+                setTtes(ttesList);
             } catch (err) {
                 console.error("Error fetching data:", err);
             } finally {
@@ -58,22 +130,54 @@ export default function DutyAssignments() {
             ...f,
             train_no: train.trainNumber,
             train_name: train.trainName,
-            source_station: train.source,
-            dest_station: train.destination,
+            source_station: `${train.source || ""} (${train.sourceCode || train.source || ""})`,
+            dest_station: `${train.destination || train.dest || ""} (${train.destCode || train.dest || ""})`,
         }));
-        setSearchQ(train.trainName);
+        setRunningDays(train.runningDays || []);
+        setSearchQ(`${train.trainName} (${train.trainNumber})`);
         setTrainResults([]);
         setSelectedCoaches([]);
-        // Fetch coaches
+        // Fetch metadata
         try {
-            const layout = await api.getSeatLayout(train.trainNumber);
+            const [layout, schedule] = await Promise.all([
+                api.getSeatLayout(train.trainNumber),
+                api.getTrainSchedule(train.trainNumber)
+            ]);
+            
             if (layout?.coaches) setCoachList(layout.coaches.map(c => ({ id: c.coachId, class: c.classCode })));
-        } catch { setCoachList([]); }
+            
+            if (schedule && schedule.length > 0) {
+                const departure = schedule[0].departureTime; // First station dep
+                const arrival = schedule[schedule.length - 1].arrivalTime; // Last station arr
+                
+                setMinStartTime(departure);
+                setLimitEndTime(arrival);
+
+                // Auto-adjust if current selection is outside the train's running window
+                if (form.shift_start < departure) setForm(f => ({ ...f, shift_start: departure }));
+                if (form.shift_end > arrival) setForm(f => ({ ...f, shift_end: arrival }));
+                // Ensure end is not before start
+                if (departure > arrival) { /* Handle overnight separately if needed, but for now stay simple */ }
+            }
+        } catch (e) { 
+            console.error("Fetch metadata error:", e);
+            setCoachList([]); 
+            setMinStartTime("");
+        }
     };
 
     const selectTTE = (tte) => {
-        setForm(f => ({ ...f, tte_name: tte.name, tte_id: tte.employee_id || tte.id, tte_email: tte.email }));
+        const finalName = tte.name || tte.full_name || tte.email?.split('@')[0] || "Unknown TTE";
+        setForm(f => ({ ...f, tte_name: finalName, tte_id: tte.employee_id || tte.id, tte_email: tte.email }));
+        setTteSearch(finalName);
+        setShowTteResults(false);
     };
+
+    const filteredTtes = !tteSearch ? ttes : ttes.filter(t => 
+        (t.name || "").toLowerCase().includes(tteSearch.toLowerCase()) ||
+        (t.email || "").toLowerCase().includes(tteSearch.toLowerCase()) ||
+        (t.employee_id || "").toLowerCase().includes(tteSearch.toLowerCase())
+    );
 
     const toggleCoach = (id) => {
         setSelectedCoaches(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
@@ -83,10 +187,32 @@ export default function DutyAssignments() {
         const fromIdx = coachList.findIndex(c => c.id === from);
         const toIdx = coachList.findIndex(c => c.id === to);
         if (fromIdx < 0 || toIdx < 0) return;
+        
+        // Get physical order from train map
         const range = coachList.slice(Math.min(fromIdx, toIdx), Math.max(fromIdx, toIdx) + 1).map(c => c.id);
+        
         setSelectedCoaches(prev => {
             const merged = new Set([...prev, ...range]);
             return Array.from(merged);
+        });
+        
+        // Reset selectors for next action
+        setRangeFrom("");
+        setRangeTo("");
+    };
+
+    const selectAllOfClass = (coachesInClass) => {
+        const allAlreadySelected = coachesInClass.every(id => selectedCoaches.includes(id));
+        
+        setSelectedCoaches(prev => {
+            if (allAlreadySelected) {
+                // Unselect all in this class
+                return prev.filter(id => !coachesInClass.includes(id));
+            } else {
+                // Select all in this class
+                const merged = new Set([...prev, ...coachesInClass]);
+                return Array.from(merged);
+            }
         });
     };
 
@@ -99,6 +225,42 @@ export default function DutyAssignments() {
         if (!form.train_no) { setError("Please select a train"); return; }
         if (!form.tte_name) { setError("Please select a TTE"); return; }
         if (selectedCoaches.length === 0) { setError("Please select at least one coach"); return; }
+        
+        // Date Validation
+        if (form.duty_date < today) {
+            setError("Duty date cannot be in the past");
+            return;
+        }
+        if (form.duty_date > maxDate) {
+            setError("Duty date cannot be more than 2 months in advance");
+            return;
+        }
+
+        // Running Day Validation
+        if (form.train_no && runningDays.length > 0) {
+            const dateObj = new Date(form.duty_date);
+            const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+            if (!runningDays.includes(dayName)) {
+                setError(`Train ${form.train_no} does not run on ${dayName}`);
+                setSaving(false);
+                return;
+            }
+        }
+
+        // Time Validation (Must be within train running window)
+        if (minStartTime && form.shift_start < minStartTime) {
+            setError(`Shift cannot start before train departure (${minStartTime})`);
+            return;
+        }
+        if (limitEndTime && form.shift_end > limitEndTime) {
+            setError(`Shift cannot end after train arrival (${limitEndTime})`);
+            return;
+        }
+        if (form.shift_start >= form.shift_end) {
+            setError("Shift end time must be after start time");
+            return;
+        }
+
         setSaving(true);
         try {
             await addDoc(collection(db, "tte_assignments"), {
@@ -114,6 +276,7 @@ export default function DutyAssignments() {
             setAssignments(aSnap.docs.map(d => ({ id: d.id, ...d.data() })));
             
             setForm({ tte_name: "", tte_id: "", tte_email: "", train_no: "", train_name: "", source_station: "", dest_station: "", duty_date: today, shift_start: "14:00", shift_end: "23:00", notes: "" });
+            setTteSearch("");
             setSelectedCoaches([]); setCoachList([]); setSearchQ("");
         } catch (dbErr) {
             setError(dbErr.message); 
@@ -156,34 +319,53 @@ export default function DutyAssignments() {
                     {error && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl px-4 py-2.5 font-bold">{error}</div>}
                     {success && <div className="bg-green-500/10 border border-green-500/20 text-green-400 text-xs rounded-xl px-4 py-2.5 font-bold">✓ Assignment created!</div>}
 
-                    {/* Select TTE */}
-                    <div>
-                        <label className="text-xs text-gray-500 font-bold uppercase tracking-wide block mb-2">Select TTE</label>
-                        {ttes.length === 0 ? (
-                            <p className="text-xs text-gray-500">No TTEs found. Add TTEs in TTE Staff section first.</p>
-                        ) : (
-                            <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto pr-1">
-                                {ttes.map(t => (
+                    {/* Select TTE Search */}
+                    <div className="relative" ref={tteRef}>
+                        <label className="text-xs text-gray-500 font-bold uppercase tracking-wide block mb-1.5">Select TTE</label>
+                        <div className="relative group">
+                            <input
+                                type="text"
+                                value={tteSearch}
+                                onChange={e => { setTteSearch(e.target.value); setShowTteResults(true); }}
+                                onFocus={() => setShowTteResults(true)}
+                                placeholder="Search TTE by name or ID..."
+                                className="w-full bg-[#080f1e] text-white border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4ab86d] transition"
+                            />
+                            {tteSearch && (
+                                <button type="button" onClick={() => { setTteSearch(""); setForm(f => ({ ...f, tte_name: "", tte_id: "", tte_email: "" })); }}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">✕</button>
+                            )}
+                        </div>
+                        
+                        {showTteResults && filteredTtes.length > 0 && (
+                            <div className="absolute z-[60] top-full mt-1 left-0 right-0 bg-[#1D2332] border border-gray-700 rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto">
+                                {filteredTtes.map(t => (
                                     <button
                                         key={t.id}
                                         type="button"
                                         onClick={() => selectTTE(t)}
-                                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-sm text-left transition ${form.tte_name === t.name ? "bg-[#4ab86d]/15 border-[#4ab86d]/30 text-[#4ab86d]" : "bg-white/3 border-white/5 text-gray-300 hover:bg-white/6"
-                                            }`}
+                                        className="w-full text-left px-4 py-3 hover:bg-[#4ab86d]/10 text-sm border-b border-white/5 group transition"
                                     >
-                                        <span className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center font-black shrink-0 text-xs">{t.name?.[0]}</span>
-                                        <div className="min-w-0">
-                                            <div className="font-bold truncate">{t.name}</div>
-                                            <div className="text-[10px] opacity-60 truncate">{t.employee_id} · {t.email}</div>
+                                        <div className="flex items-center gap-3">
+                                            <span className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center font-black text-[10px] group-hover:bg-[#4ab86d]/20 transition">{t.name?.[0] || t.email?.[0]}</span>
+                                            <div className="min-w-0">
+                                                <div className="font-bold text-white truncate">{t.name || t.full_name}</div>
+                                                <div className="text-[10px] text-gray-400 truncate">{t.employee_id} · {t.email}</div>
+                                            </div>
                                         </div>
                                     </button>
                                 ))}
                             </div>
                         )}
+                        {showTteResults && tteSearch && filteredTtes.length === 0 && (
+                            <div className="absolute z-[60] top-full mt-1 left-0 right-0 bg-[#1D2332] border border-gray-700 rounded-xl p-4 text-center text-xs text-gray-500 italic">
+                                No TTE found with that name or ID
+                            </div>
+                        )}
                     </div>
 
                     {/* Train Search */}
-                    <div className="relative">
+                    <div className="relative" ref={trainRef}>
                         <label className="text-xs text-gray-500 font-bold uppercase tracking-wide block mb-1.5">Select Train</label>
                         <input
                             type="text"
@@ -209,18 +391,74 @@ export default function DutyAssignments() {
                         )}
                     </div>
 
-                    {/* Station Range */}
+                    {/* Station Search */}
                     {form.train_no && (
                         <div className="grid grid-cols-2 gap-2">
-                            <div>
+                            <div className="relative" ref={sourceRef}>
                                 <label className="text-xs text-gray-500 font-bold block mb-1">From Station</label>
-                                <input type="text" value={form.source_station} onChange={e => setForm(f => ({ ...f, source_station: e.target.value }))}
+                                <input type="text" 
+                                    value={form.source_station} 
+                                    onFocus={() => setShowSourceResults(true)}
+                                    onChange={async (e) => {
+                                        const val = e.target.value;
+                                        setForm(f => ({ ...f, source_station: val }));
+                                        if (val.length > 1) {
+                                            const res = await api.searchStations(val);
+                                            setSourceResults(res.slice(0, 5));
+                                            setShowSourceResults(true);
+                                        }
+                                    }}
+                                    placeholder="Search source..."
                                     className="w-full bg-[#080f1e] text-white border border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4ab86d]" />
+                                
+                                {showSourceResults && sourceResults.length > 0 && (
+                                    <div className="absolute z-[60] top-full mt-1 left-0 right-0 bg-[#1D2332] border border-gray-700 rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto">
+                                        {sourceResults.map(s => (
+                                            <button key={s.code} type="button" 
+                                                onClick={() => {
+                                                    setForm(f => ({ ...f, source_station: `${s.name} (${s.code})` }));
+                                                    setShowSourceResults(false);
+                                                }}
+                                                className="w-full text-left px-4 py-2.5 hover:bg-white/5 text-xs text-gray-300 border-b border-white/5"
+                                            >
+                                                <span className="font-bold text-white">{s.name}</span> <span className="text-[#4ab86d] ml-1">[{s.code}]</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-                            <div>
+                            <div className="relative" ref={destRef}>
                                 <label className="text-xs text-gray-500 font-bold block mb-1">To Station</label>
-                                <input type="text" value={form.dest_station} onChange={e => setForm(f => ({ ...f, dest_station: e.target.value }))}
+                                <input type="text" 
+                                    value={form.dest_station} 
+                                    onFocus={() => setShowDestResults(true)}
+                                    onChange={async (e) => {
+                                        const val = e.target.value;
+                                        setForm(f => ({ ...f, dest_station: val }));
+                                        if (val.length > 1) {
+                                            const res = await api.searchStations(val);
+                                            setDestResults(res.slice(0, 5));
+                                            setShowDestResults(true);
+                                        }
+                                    }}
+                                    placeholder="Search destination..."
                                     className="w-full bg-[#080f1e] text-white border border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4ab86d]" />
+
+                                {showDestResults && destResults.length > 0 && (
+                                    <div className="absolute z-[60] top-full mt-1 left-0 right-0 bg-[#1D2332] border border-gray-700 rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto">
+                                        {destResults.map(s => (
+                                            <button key={s.code} type="button" 
+                                                onClick={() => {
+                                                    setForm(f => ({ ...f, dest_station: `${s.name} (${s.code})` }));
+                                                    setShowDestResults(false);
+                                                }}
+                                                className="w-full text-left px-4 py-2.5 hover:bg-white/5 text-xs text-gray-300 border-b border-white/5"
+                                            >
+                                                <span className="font-bold text-white">{s.name}</span> <span className="text-[#4ab86d] ml-1">[{s.code}]</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -234,43 +472,62 @@ export default function DutyAssignments() {
 
                             {/* Range selector */}
                             <div className="flex gap-2 mb-3">
-                                <select value={rangeFrom} onChange={e => setRangeFrom(e.target.value)}
+                                <select value={rangeFrom} 
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        setRangeFrom(val);
+                                        if (val && rangeTo) selectRange(val, rangeTo);
+                                    }}
                                     className="flex-1 bg-[#080f1e] text-white border border-gray-700 rounded-lg px-2 py-1.5 text-xs focus:outline-none">
-                                    <option value="">From coach...</option>
+                                    <option value="">Start Coach...</option>
                                     {coachList.map(c => <option key={c.id} value={c.id}>{c.id}</option>)}
                                 </select>
-                                <select value={rangeTo} onChange={e => setRangeTo(e.target.value)}
+                                <select value={rangeTo} 
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        setRangeTo(val);
+                                        if (rangeFrom && val) selectRange(rangeFrom, val);
+                                    }}
                                     className="flex-1 bg-[#080f1e] text-white border border-gray-700 rounded-lg px-2 py-1.5 text-xs focus:outline-none">
-                                    <option value="">To coach...</option>
+                                    <option value="">End Coach...</option>
                                     {coachList.map(c => <option key={c.id} value={c.id}>{c.id}</option>)}
                                 </select>
                                 <button type="button" onClick={() => rangeFrom && rangeTo && selectRange(rangeFrom, rangeTo)}
-                                    className="px-3 py-1.5 bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded-lg text-xs font-bold hover:bg-blue-500/30 transition">
+                                    className="px-3 py-1.5 bg-[#4ab86d]/20 text-[#4ab86d] border border-[#4ab86d]/20 rounded-lg text-xs font-bold hover:bg-[#4ab86d]/30 transition">
                                     Add
                                 </button>
                             </div>
 
                             {/* By class group */}
-                            {Object.entries(coachGroups).map(([cls, ids]) => (
-                                <div key={cls} className="mb-2">
-                                    <div className="text-[10px] text-gray-500 font-bold uppercase mb-1.5">{cls} coaches</div>
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {ids.map(id => (
-                                            <button
-                                                key={id}
-                                                type="button"
-                                                onClick={() => toggleCoach(id)}
-                                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition ${selectedCoaches.includes(id)
-                                                    ? "bg-[#4ab86d]/20 text-[#4ab86d] border-[#4ab86d]/30"
-                                                    : "bg-white/3 text-gray-400 border-white/10 hover:bg-white/8"
-                                                    }`}
-                                            >
-                                                {id}
+                            {Object.entries(coachGroups).map(([cls, ids]) => {
+                                const isAllClassSelected = ids.every(id => selectedCoaches.includes(id));
+                                return (
+                                    <div key={cls} className="mb-2">
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <div className="text-[10px] text-gray-500 font-bold uppercase">{cls} coaches</div>
+                                            <button type="button" onClick={() => selectAllOfClass(ids)}
+                                                className={`text-[9px] font-bold px-2 py-0.5 rounded transition ${isAllClassSelected ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'bg-[#4ab86d]/10 text-[#4ab86d] hover:bg-[#4ab86d]/20'}`}>
+                                                {isAllClassSelected ? `Unselect All ${cls}` : `Select All ${cls}`}
                                             </button>
-                                        ))}
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {ids.map(id => (
+                                                <button
+                                                    key={id}
+                                                    type="button"
+                                                    onClick={() => toggleCoach(id)}
+                                                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition ${selectedCoaches.includes(id)
+                                                        ? "bg-[#4ab86d]/20 text-[#4ab86d] border-[#4ab86d]/30"
+                                                        : "bg-white/3 text-gray-400 border-white/10 hover:bg-white/8"
+                                                        }`}
+                                                >
+                                                    {id}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                             <button type="button" onClick={() => setSelectedCoaches([])}
                                 className="text-xs text-gray-500 hover:text-red-400 transition mt-1">clear all</button>
                         </div>
@@ -280,18 +537,23 @@ export default function DutyAssignments() {
                     <div className="grid grid-cols-3 gap-2">
                         <div>
                             <label className="text-xs text-gray-500 font-bold block mb-1">Date</label>
-                            <input type="date" value={form.duty_date} onChange={e => setForm(f => ({ ...f, duty_date: e.target.value }))}
-                                className="w-full bg-[#080f1e] text-white border border-gray-700 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#4ab86d]" />
+                            <input type="date" value={form.duty_date} 
+                                min={today}
+                                max={maxDate}
+                                onChange={e => setForm(f => ({ ...f, duty_date: e.target.value }))}
+                                className={`w-full bg-[#080f1e] text-white border border-gray-700 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#4ab86d] ${form.duty_date < today ? 'border-red-500' : ''}`} />
                         </div>
                         <div>
-                            <label className="text-xs text-gray-500 font-bold block mb-1">Start</label>
+                            <label className="text-xs text-gray-500 font-bold block mb-1">Start {minStartTime && <span className="text-orange-400 font-normal">(Min: {formatTime(minStartTime)})</span>}</label>
                             <input type="time" value={form.shift_start} onChange={e => setForm(f => ({ ...f, shift_start: e.target.value }))}
-                                className="w-full bg-[#080f1e] text-white border border-gray-700 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#4ab86d]" />
+                                min={minStartTime}
+                                className={`w-full bg-[#080f1e] text-white border border-gray-700 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#4ab86d] ${minStartTime && form.shift_start < minStartTime ? 'border-red-500' : ''}`} />
                         </div>
                         <div>
-                            <label className="text-xs text-gray-500 font-bold block mb-1">End</label>
+                            <label className="text-xs text-gray-500 font-bold block mb-1">End {limitEndTime && <span className="text-orange-400 font-normal">(Max: {formatTime(limitEndTime)})</span>}</label>
                             <input type="time" value={form.shift_end} onChange={e => setForm(f => ({ ...f, shift_end: e.target.value }))}
-                                className="w-full bg-[#080f1e] text-white border border-gray-700 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#4ab86d]" />
+                                max={limitEndTime}
+                                className={`w-full bg-[#080f1e] text-white border border-gray-700 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#4ab86d] ${limitEndTime && form.shift_end > limitEndTime ? 'border-red-500' : ''}`} />
                         </div>
                     </div>
 
@@ -341,7 +603,7 @@ export default function DutyAssignments() {
                                                 Train <span className="font-bold text-blue-400">{a.train_no}</span> · {a.train_name}
                                             </div>
                                             <div className="text-xs text-gray-500 mt-0.5">
-                                                {a.source_station} → {a.dest_station} · {a.duty_date} · {a.shift_start}–{a.shift_end}
+                                                {a.source_station} → {a.dest_station} · {a.duty_date} · {formatTime(a.shift_start)} – {formatTime(a.shift_end)}
                                             </div>
                                             {a.coach_ids?.length > 0 && (
                                                 <div className="flex flex-wrap gap-1 mt-2">

@@ -5,9 +5,10 @@ import { collection, query, getDocs, addDoc, deleteDoc, doc, orderBy, limit } fr
 export default function AdminNotifications() {
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [form, setForm] = useState({ title: "", message: "", type: "info", target: "all" });
+    const [form, setForm] = useState({ title: "", message: "", type: "info", target: "all", link: "" });
     const [sending, setSending] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [editingId, setEditingId] = useState(null);
 
     useEffect(() => { fetchNotifications(); }, []);
 
@@ -28,24 +29,53 @@ export default function AdminNotifications() {
         if (!form.title.trim() || !form.message.trim()) return;
         setSending(true);
 
-        const fullMessage = `${form.title}: ${form.message}`;
-
         try {
-            await addDoc(collection(db, "notifications"), {
-                message: fullMessage,
+            const notifData = {
+                title: form.title,
+                message: form.message,
                 type: form.type,
                 target: form.target,
-                created_at: new Date().toISOString()
-            });
+                link: form.link || null,
+                userId: null, 
+                is_read: false,
+                for_you: false,
+                updated_at: new Date().toISOString()
+            };
 
-            setSuccess(true);
-            setForm({ title: "", message: "", type: "info", target: "all" });
+            if (editingId) {
+                await updateDoc(doc(db, "notifications", editingId), notifData);
+                setSuccess(true);
+            } else {
+                notifData.created_at = new Date().toISOString();
+                await addDoc(collection(db, "notifications"), notifData);
+                setSuccess(true);
+            }
+
+            setForm({ title: "", message: "", type: "info", target: "all", link: "" });
+            setEditingId(null);
             fetchNotifications();
             setTimeout(() => setSuccess(false), 3000);
         } catch (error) {
-            console.error("Failed to send notification:", error);
+            console.error("Failed to save notification:", error);
         }
         setSending(false);
+    };
+
+    const editNotification = (n) => {
+        setForm({
+            title: n.title || "",
+            message: n.message || "",
+            type: n.type || "info",
+            target: n.target || "all",
+            link: n.link || ""
+        });
+        setEditingId(n.id);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const cancelEdit = () => {
+        setForm({ title: "", message: "", type: "info", target: "all", link: "" });
+        setEditingId(null);
     };
 
     const deleteNotification = async (id) => {
@@ -80,7 +110,18 @@ export default function AdminNotifications() {
                 {/* Compose Form */}
                 <div className="lg:col-span-2">
                     <form onSubmit={sendNotification} className="bg-[#111827] border border-white/5 rounded-2xl p-5 space-y-4 sticky top-4">
-                        <h2 className="font-bold text-white">Send Notification</h2>
+                        <div className="flex items-center justify-between">
+                            <h2 className="font-bold text-white">{editingId ? "Edit Notification" : "Send Notification"}</h2>
+                            {editingId && (
+                                <button 
+                                    type="button" 
+                                    onClick={cancelEdit}
+                                    className="text-[10px] font-black uppercase text-red-400 hover:text-red-300 transition"
+                                >
+                                    Cancel Edit
+                                </button>
+                            )}
+                        </div>
 
                         {/* Custom Success Toast Popup to avoid browser alerts */}
                         {success && (
@@ -139,6 +180,17 @@ export default function AdminNotifications() {
                         </div>
 
                         <div>
+                            <label className="text-xs text-gray-500 font-bold uppercase tracking-wide block mb-1.5">Action Link (Optional)</label>
+                            <input
+                                type="text"
+                                value={form.link}
+                                onChange={e => setForm(f => ({ ...f, link: e.target.value }))}
+                                placeholder="e.g. /results or https://external-link.com"
+                                className="w-full bg-[#080f1e] text-white border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4ab86d] transition"
+                            />
+                        </div>
+
+                        <div>
                             <label className="text-xs text-gray-500 font-bold uppercase tracking-wide block mb-1.5">Message</label>
                             <textarea
                                 value={form.message}
@@ -153,60 +205,111 @@ export default function AdminNotifications() {
                         <button
                             type="submit"
                             disabled={sending}
-                            className="w-full bg-[#4ab86d] hover:bg-[#3da85c] disabled:opacity-50 text-black font-black py-3 rounded-xl transition flex items-center justify-center gap-2"
+                            className={`w-full ${editingId ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-[#4ab86d] hover:bg-[#3da85c] text-black'} disabled:opacity-50 font-black py-3 rounded-xl transition flex items-center justify-center gap-2`}
                         >
-                            {sending ? "Sending..." : (
+                            {sending ? "Saving..." : (
                                 <span className="flex items-center gap-2 justify-center">
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
-                                    Send Notification
+                                    {editingId ? "Update Changes" : "Send Notification"}
                                 </span>
                             )}
                         </button>
                     </form>
                 </div>
 
-                {/* Sent History */}
-                <div className="lg:col-span-3 bg-[#111827] border border-white/5 rounded-2xl overflow-hidden">
-                    <div className="px-5 py-4 border-b border-white/5">
-                        <h2 className="font-bold text-white">Sent Notifications <span className="text-xs text-gray-500 font-normal ml-2">({notifications.length})</span></h2>
+                <div className="lg:col-span-3 bg-[#111827] border border-white/5 rounded-2xl overflow-hidden flex flex-col">
+                    <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+                        <h2 className="font-bold text-white uppercase text-xs tracking-widest opacity-70">
+                            Sent History <span className="text-[#10b981] ml-2">({notifications.length})</span>
+                        </h2>
+                        <button onClick={fetchNotifications} className="text-[10px] font-bold text-gray-400 hover:text-white transition uppercase">Refresh</button>
                     </div>
-                    {loading ? (
-                        <div className="p-10 text-center text-gray-500 text-sm">Loading...</div>
-                    ) : notifications.length === 0 ? (
-                        <div className="p-10 text-center text-gray-500 text-sm">No notifications sent yet.</div>
-                    ) : (
-                        <div className="divide-y divide-white/5 max-h-[75vh] overflow-y-auto">
-                            {notifications.map(n => {
-                                // Extract pseudo-title since DB only stores message
-                                const splitIdx = n.message?.indexOf(': ') ?? -1;
-                                const title = splitIdx !== -1 ? n.message.substring(0, splitIdx) : "Notification";
-                                const actualMsg = splitIdx !== -1 ? n.message.substring(splitIdx + 2) : n.message;
 
-                                return (
-                                    <div key={n.id} className={`flex gap-4 px-5 py-4 border-l-2 ${n.type === "alert" ? "border-red-500" :
-                                        n.type === "warning" ? "border-orange-500" :
-                                            n.type === "success" ? "border-green-500" : "border-blue-500"
-                                        }`}>
-                                        <span className="text-xl shrink-0">{TYPE_ICONS[n.type] || "ℹ️"}</span>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="font-bold text-white text-sm">{title}</div>
-                                            <div className="text-xs text-gray-400 mt-0.5 line-clamp-2">{actualMsg}</div>
-                                            <div className="flex gap-3 text-[10px] text-gray-600 mt-1.5">
-                                                <span>{n.created_at ? new Date(n.created_at).toLocaleDateString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : ""}</span>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => deleteNotification(n.id)}
-                                            className="text-gray-600 hover:text-red-400 transition text-sm shrink-0 self-start mt-1"
-                                            title="Delete"
-                                        >
-                                            🗑
-                                        </button>
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    )}
+                    <div className="flex-1 overflow-x-auto overflow-y-auto max-h-[75vh] scrollbar-hide">
+                        {loading ? (
+                            <div className="p-12 text-center text-gray-500 flex flex-col items-center gap-3">
+                                <div className="w-5 h-5 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin"></div>
+                                <span className="text-xs font-bold uppercase tracking-wider">Syncing with Cloud...</span>
+                            </div>
+                        ) : notifications.length === 0 ? (
+                            <div className="p-12 text-center text-gray-500 text-sm italic font-medium">
+                                No broadcast records found in this sequence.
+                            </div>
+                        ) : (
+                            <table className="w-full text-left border-collapse min-w-[700px]">
+                                <thead className="bg-white/[0.02] border-b border-white/5 sticky top-0 z-10 backdrop-blur-md">
+                                    <tr className="text-[10px] font-black text-gray-500 uppercase tracking-widest">
+                                        <th className="px-5 py-4">ID</th>
+                                        <th className="px-3 py-4 text-center">Type</th>
+                                        <th className="px-3 py-4 text-center">Target</th>
+                                        <th className="px-3 py-4">Title & Message</th>
+                                        <th className="px-4 py-4">Created At</th>
+                                        <th className="px-5 py-4 text-right"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {notifications.map((n) => (
+                                        <tr key={n.id} className="group hover:bg-white/[0.03] transition-colors border-l-2 border-l-transparent hover:border-l-[#10b981]">
+                                            <td className="px-5 py-4">
+                                                <div className="font-mono text-[9px] text-gray-600 bg-white/3 px-1.5 py-0.5 rounded w-fit">
+                                                    {n.id.slice(0, 8)}...
+                                                </div>
+                                            </td>
+                                            <td className="px-3 py-4 text-center">
+                                                <span className={`text-base shadow-sm`} title={n.type}>
+                                                    {TYPE_ICONS[n.type] || "ℹ️"}
+                                                </span>
+                                            </td>
+                                            <td className="px-3 py-4 text-center">
+                                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                                                    n.target === 'all' ? 'text-blue-400 border-blue-500/20 bg-blue-500/5' :
+                                                    n.target === 'ttes' ? 'text-purple-400 border-purple-500/20 bg-purple-500/5' :
+                                                    'text-orange-400 border-orange-500/20 bg-orange-500/5'
+                                                }`}>
+                                                    {n.target || "all"}
+                                                </span>
+                                            </td>
+                                            <td className="px-3 py-4 max-w-xs">
+                                                <div className="flex items-center gap-2 mb-0.5">
+                                                    <div className="font-bold text-white text-xs truncate" title={n.title}>{n.title}</div>
+                                                    {n.link && (
+                                                        <span className="text-blue-400 text-[10px]" title={n.link}>🔗</span>
+                                                    )}
+                                                </div>
+                                                <div className="text-[10px] text-gray-400 truncate opacity-60" title={n.message}>{n.message}</div>
+                                            </td>
+                                            <td className="px-4 py-4 whitespace-nowrap">
+                                                <div className="text-[10px] text-gray-300 font-medium">
+                                                    {n.created_at ? new Date(n.created_at).toLocaleDateString("en-IN", { day: '2-digit', month: 'short' }) : "—"}
+                                                </div>
+                                                <div className="text-[9px] text-gray-600 font-bold uppercase mt-0.5">
+                                                    {n.created_at ? new Date(n.created_at).toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit' }) : ""}
+                                                </div>
+                                            </td>
+                                            <td className="px-5 py-4 text-right">
+                                                <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                                                    <button
+                                                        onClick={() => editNotification(n)}
+                                                        className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-400 hover:bg-blue-500/10 transition-all"
+                                                        title="Edit notification"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => deleteNotification(n.id)}
+                                                        className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                                                        title="Permanently remove from collection"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

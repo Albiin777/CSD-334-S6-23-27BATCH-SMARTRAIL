@@ -3,7 +3,7 @@ import { useSmartRail } from '../hooks/useSmartRail';
 import {
     LayoutDashboard, Search, Armchair, ListOrdered,
     Banknote, UserX, AlertTriangle, RefreshCw, BarChart3,
-    ChevronLeft, ChevronRight, Train, X, Star, MessageSquareWarning, Ticket
+    ChevronLeft, ChevronRight, Train, X, Star, MessageSquareWarning, Ticket, Bell
 } from 'lucide-react';
 
 const navItems = [
@@ -17,6 +17,7 @@ const navItems = [
     { path: '/tte/analytics', label: 'Analytics', icon: BarChart3 },
     { path: '/tte/reviews', label: 'Reviews', icon: Star },
     { path: '/tte/complaints', label: 'Complaints', icon: MessageSquareWarning },
+    { path: '/tte/notifications', label: 'Notifications', icon: Bell },
     { path: '/tte/issue-ticket', label: 'Issue Ticket', icon: Ticket },
 ];
 
