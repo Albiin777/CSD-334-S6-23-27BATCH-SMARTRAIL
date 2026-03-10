@@ -6,21 +6,23 @@ export const getUserNotifications = async (req, res) => {
     const userId = req.user.id;
 
     // Firestore doesn't support complex OR queries easily in earlier SDKs, 
-    // but we can merge two results or use Filter.or
+    // and we remove orderBy to avoid index requirement issues during development
     const userNotifsSnapshot = await adminDb.collection('notifications')
       .where('userId', '==', userId)
-      .orderBy('created_at', 'desc')
       .get();
 
     const broadcastNotifsSnapshot = await adminDb.collection('notifications')
       .where('userId', '==', null)
-      .orderBy('created_at', 'desc')
       .get();
 
     const notifications = [
       ...userNotifsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
       ...broadcastNotifsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    ].sort((a, b) => {
+        const dateA = new Date(a.created_at || a.timestamp || 0);
+        const dateB = new Date(b.created_at || b.timestamp || 0);
+        return dateB - dateA;
+    });
 
     res.json(notifications);
   } catch (error) {

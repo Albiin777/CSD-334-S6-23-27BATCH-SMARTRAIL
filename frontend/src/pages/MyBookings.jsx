@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { auth } from '../utils/firebaseClient';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Train, Calendar, MapPin, Search, ArrowRight, Loader2, Ticket, ShieldCheck, Home } from 'lucide-react';
+import { API_BASE_URL } from '../api/config';
 import QRCode from "react-qr-code";
 
 export default function MyBookings() {
@@ -21,7 +22,7 @@ export default function MyBookings() {
             try {
                 const token = await currentUser.getIdToken();
                 
-                const res = await fetch('http://localhost:5001/api/bookings/history', {
+                const res = await fetch(`${API_BASE_URL}/bookings/history`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 

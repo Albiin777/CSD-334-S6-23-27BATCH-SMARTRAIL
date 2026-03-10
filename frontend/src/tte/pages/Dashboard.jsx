@@ -9,8 +9,30 @@ export default function Dashboard() {
     const navigate = useNavigate();
     const { stats, tteInfo, logs, time, stations, stationIndex, nextStation, coaches, coachConfigs, selectedCoach, setSelectedCoach, seats } = useSmartRail();
     const [showCoachPicker, setShowCoachPicker] = useState(false);
-    const occPct = stats.totalSeats > 0 ? Math.round((stats.booked / stats.totalSeats) * 100) : 0;
-    const coachCfg = coachConfigs[coaches.find(c => c.id === selectedCoach)?.type];
+    const totalSeats = stats?.totalSeats || 0;
+    const booked = stats?.booked || 0;
+    const occPct = totalSeats > 0 ? Math.round((booked / totalSeats) * 100) : 0;
+    
+    // Safely get coach config with fallback
+    const currentCoachType = coaches.find(c => c.id === selectedCoach)?.type;
+    const coachCfg = coachConfigs?.[currentCoachType] || { label: 'Unknown', berths: 0 };
+
+    const infoList = [
+        ['TTE Name', tteInfo?.name || '—'], 
+        ['TTE ID', tteInfo?.id || '—'],
+        ['Train No', tteInfo?.trainNo || '—'], 
+        ['Train Name', tteInfo?.trainName || '—'],
+        ['Route', tteInfo?.route || '—'], 
+        ['Date', tteInfo?.date || '—'],
+        ['Departure', tteInfo?.departure || '—'], 
+        ['Arrival', tteInfo?.arrival || '—'],
+        ['Duration', tteInfo?.duration || '—'], 
+        ['Shift', tteInfo?.shift || '—'],
+        ['Zone', tteInfo?.zone || '—'], 
+        ['Rake', tteInfo?.rakeType || '—'],
+        ['Pantry', tteInfo?.pantryAvailable || '—'], 
+        ['Division', tteInfo?.division || '—'],
+    ];
 
     return (
         <div className="space-y-6">
@@ -21,7 +43,7 @@ export default function Dashboard() {
                 <StatCard label="Vacant" value={stats.vacant} icon={Clock} color="yellow" />
                 <StatCard label="RAC" value={stats.rac} icon={ListOrdered} color="cyan" />
                 <StatCard label="Waitlist" value={stats.waitlist} icon={XCircle} color="red" />
-                <StatCard label="Fine Collected" value={`₹${stats.fineCollected}`} icon={Banknote} color="purple" />
+                <StatCard label="Fine Collected" value={`₹${stats?.fineCollected || 0}`} icon={Banknote} color="purple" />
             </div>
 
             {/* TTE Info + Coach Selector + Occupancy */}
@@ -31,15 +53,7 @@ export default function Dashboard() {
                         <h3 className="text-sm font-bold text-[#B3B3B3] uppercase tracking-wider flex items-center gap-2"><Train size={16} className="text-blue-400" /> Train & TTE Details</h3>
                     </div>
                     <div className="grid grid-cols-2 gap-y-4 gap-x-8">
-                        {[
-                            ['TTE Name', tteInfo.name], ['TTE ID', tteInfo.id],
-                            ['Train No', tteInfo.trainNo], ['Train Name', tteInfo.trainName],
-                            ['Route', tteInfo.route], ['Date', tteInfo.date],
-                            ['Departure', tteInfo.departure], ['Arrival', tteInfo.arrival],
-                            ['Duration', tteInfo.duration], ['Shift', tteInfo.shift],
-                            ['Zone', tteInfo.zone], ['Rake', tteInfo.rakeType],
-                            ['Pantry', tteInfo.pantryAvailable], ['Division', tteInfo.division],
-                        ].map(([label, val]) => (
+                        {infoList.map(([label, val]) => (
                             <div key={label}>
                                 <p className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-wider">{label}</p>
                                 <p className="text-sm font-semibold text-white mt-0.5">{val}</p>
@@ -245,7 +259,7 @@ export default function Dashboard() {
                 </div>
                 <div className="overflow-x-auto">
                     <div className="flex items-center gap-2 min-w-max">
-                        {stations.map((s, i) => (
+                        {(stations || []).map((s, i) => (
                             <div key={s} className="flex items-center gap-2">
                                 <div className="flex flex-col items-center">
                                     <div className={`w-4 h-4 rounded-full border-2 ${i <= stationIndex ? 'bg-emerald-400 border-emerald-400' : 'bg-transparent border-[#4B5563]'}`} />

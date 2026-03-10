@@ -143,22 +143,23 @@ export function SmartRailProvider({ children }) {
 
                     let assignedTrainNumber = null;
                     let assignedCoachId = null;
+                    let assignmentData = null;
 
                     if (tteEmail) {
                         const q = query(collection(db, 'tte_assignments'), where('tte_email', '==', tteEmail), where('status', '==', 'active'), limit(1));
                         const qSnap = await getDocs(q);
                         if (!qSnap.empty) {
-                            const data = qSnap.docs[0].data();
-                            assignedTrainNumber = data.train_no;
-                            assignedCoachId = data.coach_ids?.[0];
+                            assignmentData = qSnap.docs[0].data();
+                            assignedTrainNumber = assignmentData.train_no;
+                            assignedCoachId = assignmentData.coach_ids?.[0];
                             setTteDetails({
-                                name: profileName || data.tte_name,
-                                id: data.tte_id,
-                                trainName: data.train_name,
-                                source: data.source_station,
-                                destination: data.dest_station,
+                                name: profileName || currentUser?.displayName || assignmentData.tte_name || 'TTE',
+                                id: assignmentData.tte_id,
+                                trainName: assignmentData.train_name,
+                                source: assignmentData.source_station,
+                                destination: assignmentData.dest_station,
                                 assignedCoachId,
-                                assignedCoaches: data.coach_ids || []
+                                assignedCoaches: assignmentData.coach_ids || []
                             });
                         }
                     }
@@ -178,7 +179,12 @@ export function SmartRailProvider({ children }) {
                     setTrainDetails(tData);
 
                     const coachSnap = await getDocs(query(collection(db, 'coaches'), where('train_id', '==', tData.id), orderBy('position')));
-                    const mappedCoaches = coachSnap.docs.map(d => ({ id: d.data().coach_id, type: d.data().coach_type, label: d.data().label, dbId: d.id }));
+                    let mappedCoaches = coachSnap.docs.map(d => ({ id: d.data().coach_id, type: d.data().coach_type, label: d.data().label, dbId: d.id }));
+                    
+                    if (assignedCoachId && assignmentData?.coach_ids?.length > 0) {
+                        mappedCoaches = mappedCoaches.filter(c => assignmentData.coach_ids.includes(c.id));
+                    }
+                    
                     setCoaches(mappedCoaches);
                     setSelectedCoach(assignedCoachId || mappedCoaches[0]?.id);
 
@@ -229,9 +235,10 @@ export function SmartRailProvider({ children }) {
         }
     }, [passengers]);
 
-    const markNoShow = useCallback(async (paxId) => {
-        setPassengers(prev => prev.map(p => p.id === paxId ? { ...p, status: 'No-Show' } : p));
-    }, []);
+    const nextStation = () => {
+        setStationIndex(prev => (prev + 1) % STATIONS.length);
+        addLog(`Arrived at ${STATIONS[(stationIndex + 1) % STATIONS.length]}`, 'success');
+    };
 
     const safeCoach = selectedCoach || '';
     const currentCoachObj = coaches.find(c => c.id === safeCoach) || null;
@@ -262,7 +269,8 @@ export function SmartRailProvider({ children }) {
     const value = {
         time, passengers: coachPassengers, allPassengers: passengers, coaches, incidents, fines, reviews, complaints,
         selectedCoach, setSelectedCoach, tteInfo, stats, seats, dataSource, loading, error,
-        verifyPassenger, markNoShow, addLog, logs, getBerthLabel, getBerthFull, getBay, isSideBerth
+        verifyPassenger, addLog, logs, getBerthLabel, getBerthFull, getBay, isSideBerth,
+        stations: STATIONS, stationIndex, nextStation, coachConfigs: COACH_CONFIGS
     };
 
     return <SmartRailContext.Provider value={value}>{children}</SmartRailContext.Provider>;

@@ -121,7 +121,7 @@ function QRScanner({ onScanResult, allPassengers }) {
 }
 
 export default function PassengerVerify() {
-    const { passengers, allPassengers, seats, coaches, selectedCoach, setSelectedCoach, currentCoachType, currentConfig, coachConfigs, verifyPassenger, markNoShow, getBerthLabel } = useSmartRail();
+    const { passengers, allPassengers, seats, coaches, selectedCoach, setSelectedCoach, currentCoachType, currentConfig, coachConfigs, verifyPassenger, getBerthLabel } = useSmartRail();
     const [query, setQuery] = useState('');
     const [searchBy, setSearchBy] = useState('name');
     const [selected, setSelected] = useState(null);
@@ -423,10 +423,6 @@ export default function PassengerVerify() {
                                         <CheckCircle size={16} /> Verified ✓
                                     </div>
                                 )}
-                                <button onClick={() => { markNoShow(selected.id); setSelected({ ...selected, status: 'No-Show' }); }}
-                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl font-semibold text-sm hover:bg-red-500 hover:text-white transition">
-                                    <XCircle size={16} /> No-Show
-                                </button>
                             </div>
                         </div>
                     ) : (

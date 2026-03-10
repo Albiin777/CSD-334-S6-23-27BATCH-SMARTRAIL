@@ -4,6 +4,7 @@ import { getDoc, doc } from 'firebase/firestore';
 import { syncUserProfile } from '../utils/userProfile';
 import { onAuthStateChanged, updateEmail, verifyBeforeUpdateEmail, RecaptchaVerifier, signInWithPhoneNumber, PhoneAuthProvider, updatePhoneNumber, signInWithCustomToken } from 'firebase/auth';
 import { User, Mail, Phone, ShieldCheck, Loader2, CheckCircle2, RotateCcw } from 'lucide-react';
+import { API_BASE_URL } from '../api/config';
 
 export default function MyAccount() {
     const [user, setUser] = useState(null);
@@ -111,7 +112,7 @@ export default function MyAccount() {
         setIsProcessing(true);
         try {
             // Send OTP to the NEW email using our custom backend
-            const response = await fetch('http://localhost:5001/api/auth/send-custom-email-otp', {
+            const response = await fetch(`${API_BASE_URL}/auth/send-custom-email-otp`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email: trimmedEmail })
@@ -180,7 +181,7 @@ export default function MyAccount() {
                 const currentUser = auth.currentUser;
                 if (!currentUser) throw new Error('Not authenticated.');
 
-                const response = await fetch('http://localhost:5001/api/auth/verify-custom-email-update-otp', {
+                const response = await fetch(`${API_BASE_URL}/auth/verify-custom-email-update-otp`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email: trimmedEmail, token: otp, uid: currentUser.uid })

@@ -7,7 +7,6 @@ import SeatManagement from './pages/SeatManagement';
 import IssueTicket from './pages/IssueTicket';
 import WaitlistRAC from './pages/WaitlistRAC';
 import FinesPenalty from './pages/FinesPenalty';
-import NoShowManager from './pages/NoShowManager';
 import IncidentReport from './pages/IncidentReport';
 import Handover from './pages/Handover';
 import Analytics from './pages/Analytics';
@@ -25,7 +24,6 @@ export default function App() {
                     <Route path="issue-ticket" element={<IssueTicket />} />
                     <Route path="waitlist" element={<WaitlistRAC />} />
                     <Route path="fines" element={<FinesPenalty />} />
-                    <Route path="noshow" element={<NoShowManager />} />
                     <Route path="incidents" element={<IncidentReport />} />
                     <Route path="handover" element={<Handover />} />
                     <Route path="analytics" element={<Analytics />} />

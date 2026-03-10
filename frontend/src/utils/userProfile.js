@@ -1,3 +1,5 @@
+import { API_BASE_URL } from "../api/config";
+
 /**
  * Syncs a Firebase user's profile to the Supabase `profiles` table
  * via the backend `/api/auth/sync-profile` endpoint, which uses the
@@ -29,7 +31,7 @@ export async function syncUserProfile(firebaseUser, extraData = {}) {
       }
     });
 
-    const response = await fetch('http://localhost:5001/api/auth/sync-profile', {
+    const response = await fetch(`${API_BASE_URL}/auth/sync-profile`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)

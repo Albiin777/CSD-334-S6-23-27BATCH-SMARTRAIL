@@ -1,6 +1,6 @@
 import { auth } from '../utils/firebaseClient';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+import { API_BASE_URL } from './config';
 
 const getAuthHeaders = async () => {
     const user = auth.currentUser;

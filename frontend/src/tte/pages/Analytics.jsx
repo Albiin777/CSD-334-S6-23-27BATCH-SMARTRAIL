@@ -8,14 +8,12 @@ export default function Analytics() {
     const totalConfirmed = passengers.filter(p => p.status === 'Confirmed').length;
     const totalWL = passengers.filter(p => p.status === 'Waitlist').length;
     const wlConv = (totalConfirmed + totalWL) > 0 ? Math.round((totalConfirmed / (totalConfirmed + totalWL)) * 100) : 0;
-    const noShowRate = stats.totalPassengers > 0 ? Math.round((stats.noShows / stats.totalPassengers) * 100) : 0;
     const revenue = fines.reduce((s, f) => s + f.amount, 0);
 
     const dailyStats = [
         { label: 'Occupancy %', value: `${occPct}%`, bar: occPct, color: 'bg-emerald-400' },
         { label: 'Revenue Collected', value: `₹${revenue}`, bar: Math.min((revenue / 2000) * 100, 100), color: 'bg-blue-400' },
         { label: 'WL Conversion', value: `${wlConv}%`, bar: wlConv, color: 'bg-amber-400' },
-        { label: 'No-Show Rate', value: `${noShowRate}%`, bar: noShowRate, color: 'bg-red-400' },
     ];
 
     const categories = [

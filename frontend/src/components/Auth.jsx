@@ -17,6 +17,7 @@ import {
   signInWithCustomToken
 } from "firebase/auth";
 import { X, ArrowRight, Loader2, User, Calendar, Phone, Mail, CheckCircle2, Lock, Eye, EyeOff, Timer, ChevronDown } from "lucide-react";
+import { API_BASE_URL } from "../api/config";
 
 export default function Auth({ onClose }) {
   // Mode: 'login' | 'signup'
@@ -205,7 +206,7 @@ export default function Auth({ onClose }) {
 
       // Pre-check: does this email/phone exist in our profiles table?
       const checkPayload = isEmail ? { email: emailLower } : { phone: `+91${cleanedIdentifier}` };
-      const checkRes = await fetch('http://localhost:5001/api/auth/check-identifier', {
+      const checkRes = await fetch(`${API_BASE_URL}/auth/check-identifier`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(checkPayload)
@@ -222,7 +223,7 @@ export default function Auth({ onClose }) {
 
       if (isEmail) {
         // Send Custom Email OTP
-        const response = await fetch('http://localhost:5001/api/auth/send-custom-email-otp', {
+        const response = await fetch(`${API_BASE_URL}/auth/send-custom-email-otp`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: emailLower })
@@ -282,7 +283,7 @@ export default function Auth({ onClose }) {
         // Custom Email OTP Flow
         const emailLower = identifier.trim().toLowerCase();
 
-        const response = await fetch('http://localhost:5001/api/auth/verify-custom-email-otp', {
+        const response = await fetch(`${API_BASE_URL}/auth/verify-custom-email-otp`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: emailLower, token: otpValue })
@@ -372,7 +373,7 @@ export default function Auth({ onClose }) {
     setEmailVerificationState({ ...emailVerificationState, loading: true });
     setError("");
     try {
-      const response = await fetch('http://localhost:5001/api/auth/send-custom-email-otp', {
+      const response = await fetch(`${API_BASE_URL}/auth/send-custom-email-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: profile.email.toLowerCase() })
@@ -396,7 +397,7 @@ export default function Auth({ onClose }) {
     setEmailVerificationState({ ...emailVerificationState, loading: true });
     setError("");
     try {
-      const response = await fetch('http://localhost:5001/api/auth/verify-custom-email-otp', {
+      const response = await fetch(`${API_BASE_URL}/auth/verify-custom-email-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: profile.email.toLowerCase(), token: emailVerificationState.code })

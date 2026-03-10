@@ -12,7 +12,6 @@ const navItems = [
     { path: '/tte/seats', label: 'Seat Management', icon: Armchair },
     { path: '/tte/waitlist', label: 'WL & RAC', icon: ListOrdered },
     { path: '/tte/fines', label: 'Fines & Penalty', icon: Banknote },
-    { path: '/tte/noshow', label: 'No-Show Mgmt', icon: UserX },
     { path: '/tte/incidents', label: 'Incidents', icon: AlertTriangle },
     { path: '/tte/handover', label: 'TT Handover', icon: RefreshCw },
     { path: '/tte/analytics', label: 'Analytics', icon: BarChart3 },
