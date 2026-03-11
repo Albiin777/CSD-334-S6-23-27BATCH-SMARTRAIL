@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../../utils/firebaseClient';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, limit } from 'firebase/firestore';
 import { Bell, Info, AlertTriangle, CheckCircle, Trash2, Calendar, Filter } from 'lucide-react';
 
 const TYPE_CONFIG = {
@@ -24,20 +24,21 @@ export default function Notifications() {
     const fetchNotifications = async () => {
         setLoading(true);
         try {
-            // Fetch broadcast notifications (userId is null) 
-            // We'll also check for target 'all' or 'ttes'
+            // Fetch all notifications and filter client-side to avoid composite index requirement
             const q = query(
                 collection(db, "notifications"),
-                where("userId", "==", null),
                 orderBy("created_at", "desc"),
-                limit(30)
+                limit(50)
             );
             
             const snap = await getDocs(q);
             const allNotifs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             
-            // Client-side filtering for TTE audience
-            const tteNotifs = allNotifs.filter(n => n.target === 'all' || n.target === 'ttes');
+            // Filter for broadcast notifications (userId is null) targeting TTEs or all
+            const tteNotifs = allNotifs.filter(n => 
+                (n.userId === null || n.userId === undefined) && 
+                (n.target === 'all' || n.target === 'ttes')
+            );
             
             setNotifications(tteNotifs);
         } catch (err) {

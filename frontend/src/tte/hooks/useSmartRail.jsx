@@ -331,7 +331,9 @@ export function SmartRailProvider({ children }) {
                                 coach: p.seatNumber ? p.seatNumber.split('-')[0] : '',
                                 status: p.status,
                                 verified: p.verified || false,
-                                fare: b.totalFare || 0
+                                fare: b.totalFare || 0,
+                                wlNumber: p.wlNumber || null,
+                                racNumber: p.racNumber || null
                             });
                         });
                     });
@@ -367,6 +369,32 @@ export function SmartRailProvider({ children }) {
         setStationIndex(prev => (prev + 1) % stations.length);
         addLog(`Arrived at ${stations[(stationIndex + 1) % stations.length]}`, 'success');
     };
+
+    // Upgrade RAC passenger to CNF when a seat becomes available
+    const upgradeRAC = useCallback(async (paxId) => {
+        const p = passengers.find(x => x.id === paxId);
+        if (!p || p.status !== 'RAC') return;
+        
+        // Update local state
+        setPassengers(prev => prev.map(px => px.id === paxId ? { ...px, status: 'CNF' } : px));
+        
+        // Update Firestore
+        try {
+            const bookingId = p.id.split('_')[0];
+            const bRef = doc(db, 'pnr_bookings', bookingId);
+            const bDoc = await getDoc(bRef);
+            if (bDoc.exists()) {
+                const updated = bDoc.data().passengers.map(px => 
+                    px.name === p.name ? { ...px, status: 'CNF' } : px
+                );
+                await updateDoc(bRef, { passengers: updated });
+                addLog(`Upgraded ${p.name} from RAC to Confirmed`, 'success');
+            }
+        } catch (err) {
+            console.error('RAC upgrade error:', err);
+            addLog(`Failed to upgrade ${p.name}`, 'error');
+        }
+    }, [passengers, addLog]);
 
     const issueTicket = async (ticket) => {
         addLog(`Issued ticket to ${ticket.name} (PNR: ${ticket.pnr}) for ${ticket.from} \u2192 ${ticket.to}. Fare: \u20B9${ticket.fare}`, 'success');
@@ -431,8 +459,14 @@ export function SmartRailProvider({ children }) {
     const value = {
         time, passengers: coachPassengers, allPassengers: passengers, coaches, incidents, fines, reviews, complaints,
         selectedCoach, setSelectedCoach, tteInfo, stats, seats, dataSource, loading, error,
-        verifyPassenger, addLog, logs, getBerthLabel, getBerthFull, getBay, isSideBerth,
-        stations, stationIndex, nextStation, issueTicket, coachConfigs: COACH_CONFIGS
+        verifyPassenger, upgradeRAC, addLog, logs, getBerthLabel, getBerthFull, getBay, isSideBerth,
+        stations, stationIndex, nextStation, issueTicket, coachConfigs: COACH_CONFIGS,
+        // Additional exports for TTE pages
+        currentCoachType, currentConfig,
+        currentStation: stations[stationIndex] || stations[0],
+        setFines, setIncidents, setComplaints,
+        addFine: (fine) => { setFines(prev => [...prev, { ...fine, id: Date.now() }]); addLog(`Fine issued: ₹${fine.amount}`, 'fine'); },
+        addIncident: (incident) => { setIncidents(prev => [...prev, { ...incident, id: Date.now() }]); addLog(`Incident: ${incident.title}`, 'incident'); }
     };
 
     return <SmartRailContext.Provider value={value}>{children}</SmartRailContext.Provider>;
