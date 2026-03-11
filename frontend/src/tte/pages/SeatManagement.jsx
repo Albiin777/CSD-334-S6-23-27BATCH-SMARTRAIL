@@ -201,16 +201,30 @@ export default function SeatManagement() {
                         {coachCfg?.isChair ? (
                             /* Chair arrangement — rows */
                             <div className="space-y-1.5">
-                                {Object.entries(bays).map(([bayNum, baySeats]) => (
-                                    <BerthBay key={bayNum} baySeats={baySeats} bayNum={bayNum} config={coachCfg} selected={selected} onSelect={setSelected} />
-                                ))}
+                                {Object.keys(bays).length > 0 ? (
+                                    Object.entries(bays).map(([bayNum, baySeats]) => (
+                                        <BerthBay key={bayNum} baySeats={baySeats} bayNum={bayNum} config={coachCfg} selected={selected} onSelect={setSelected} />
+                                    ))
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                                        <p className="text-sm text-[#9CA3AF]">No seat data available for this coach</p>
+                                        <p className="text-xs text-[#6B7280] mt-1">Check if backend server is running</p>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             /* Berth arrangement — bays */
                             <div className="space-y-3">
-                                {Object.entries(bays).map(([bayNum, baySeats]) => (
-                                    <BerthBay key={bayNum} baySeats={baySeats} bayNum={bayNum} config={coachCfg} selected={selected} onSelect={setSelected} />
-                                ))}
+                                {Object.keys(bays).length > 0 ? (
+                                    Object.entries(bays).map(([bayNum, baySeats]) => (
+                                        <BerthBay key={bayNum} baySeats={baySeats} bayNum={bayNum} config={coachCfg} selected={selected} onSelect={setSelected} />
+                                    ))
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                                        <p className="text-sm text-[#9CA3AF]">No berth data available for this coach</p>
+                                        <p className="text-xs text-[#6B7280] mt-1">Check if backend server is running</p>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
