@@ -264,7 +264,8 @@ export function SmartRailProvider({ children }) {
                         const targetIds = assignmentData.coach_ids.map(id => id.toUpperCase());
                         const filtered = mappedCoaches.filter(c => targetIds.includes(c.id.toUpperCase()));
                         
-                        // If no matches found from backend, create coaches from assigned IDs directly
+                        // If no matches found from backend, create coaches from assigned IDs 
+                        // and map them to real backend layout data by class type
                         if (filtered.length === 0) {
                             // Indian Railways coach naming: S=Sleeper, D=Sleeper, C=ChairCar, A=AC1, B=AC2, H=AC3, E=3E
                             const inferCoachType = (coachId) => {
@@ -281,12 +282,30 @@ export function SmartRailProvider({ children }) {
                                 };
                                 return typeMap[prefix] || 'SL';
                             };
-                            mappedCoaches = assignmentData.coach_ids.map((id, i) => ({
-                                id: id,
-                                type: inferCoachType(id),
-                                label: id,
-                                dbId: `assigned_${i}`
-                            }));
+                            
+                            // Group backend coaches by class type for layout data reuse
+                            const backendByType = {};
+                            Object.values(backendMap).forEach(coach => {
+                                if (!backendByType[coach.classCode]) {
+                                    backendByType[coach.classCode] = coach;
+                                }
+                            });
+                            
+                            mappedCoaches = assignmentData.coach_ids.map((id, i) => {
+                                const coachType = inferCoachType(id);
+                                // Map this assigned coach to real backend layout data of same type
+                                const realLayout = backendByType[coachType];
+                                if (realLayout) {
+                                    backendMap[id] = { ...realLayout, coachId: id };
+                                }
+                                return {
+                                    id: id,
+                                    type: coachType,
+                                    label: id,
+                                    dbId: `assigned_${i}`
+                                };
+                            });
+                            setBackendCoachMap(backendMap);
                         } else {
                             mappedCoaches = filtered;
                         }
@@ -358,14 +377,18 @@ export function SmartRailProvider({ children }) {
     const currentCoachObj = coaches.find(c => c.id === safeCoach) || null;
     const currentCoachType = currentCoachObj?.type || '3A';
     const currentConfig = COACH_CONFIGS[currentCoachType];
-    const seats = buildCoachSeats(safeCoach, currentCoachType, passengers, backendCoachMap[safeCoach]?.berths);
+    // Use backend seats data (not "berths" - backend returns "seats" array)
+    const backendCoachData = backendCoachMap[safeCoach];
+    const seats = buildCoachSeats(safeCoach, currentCoachType, passengers, backendCoachData?.seats);
 
     const coachPassengers = passengers.filter(p => p.coach === safeCoach);
+    // Use real seat count from backend, fallback to config
+    const realTotalSeats = backendCoachData?.totalSeats || backendCoachData?.seats?.length || currentConfig?.berths || 0;
     const stats = {
-        totalSeats: currentConfig?.berths || 0,
+        totalSeats: realTotalSeats,
         booked: coachPassengers.filter(p => ['Confirmed', 'CNF', 'RAC'].includes(p.status)).length,
         verified: coachPassengers.filter(p => p.verified).length,
-        vacant: (currentConfig?.berths || 0) - coachPassengers.filter(p => ['Confirmed', 'CNF', 'RAC'].includes(p.status)).length,
+        vacant: realTotalSeats - coachPassengers.filter(p => ['Confirmed', 'CNF', 'RAC'].includes(p.status)).length,
     };
 
     // Format today's date or use assignment journey date

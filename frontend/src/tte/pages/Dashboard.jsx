@@ -13,10 +13,13 @@ export default function Dashboard() {
     const booked = stats?.booked || 0;
     const occPct = totalSeats > 0 ? Math.round((booked / totalSeats) * 100) : 0;
     
-    // Safely get coach config with fallback - match useSmartRail.jsx behavior
+    // Safely get coach config with fallback - uses real totalSeats from stats
     const currentCoachObj = coaches.find(c => c.id === selectedCoach);
     const currentCoachType = currentCoachObj?.type || 'SL';
-    const coachCfg = coachConfigs?.[currentCoachType] || { label: 'Sleeper', berths: 72, color: '#eab308' };
+    const coachCfg = {
+        ...(coachConfigs?.[currentCoachType] || { label: 'Sleeper', color: '#eab308' }),
+        berths: totalSeats // Use real seat count from backend
+    };
 
     const infoList = [
         ['TTE Name', tteInfo?.name || '—'], 
