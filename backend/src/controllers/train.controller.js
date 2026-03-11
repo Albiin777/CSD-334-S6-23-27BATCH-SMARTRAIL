@@ -136,8 +136,10 @@ export async function searchTrains(req, res) {
     res.json(results.map(t => ({
         trainNumber: t.trainNumber,
         trainName: t.trainName,
-        source: t.source,
-        destination: t.destination,
+        source: dataStore.stationsMap.get(t.source)?.name || t.source,
+        destination: dataStore.stationsMap.get(t.destination)?.name || t.destination,
+        sourceCode: t.source,
+        destCode: t.destination,
         runningDays: t.runningDays
     })));
 }

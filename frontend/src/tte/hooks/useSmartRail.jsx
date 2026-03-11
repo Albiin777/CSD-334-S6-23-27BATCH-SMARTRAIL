@@ -206,15 +206,34 @@ export function SmartRailProvider({ children }) {
                         console.warn("[useSmartRail] Failed to load schedule:", e);
                     }
 
-                    const coachSnap = await getDocs(query(collection(db, 'coaches'), where('train_id', '==', tData.id), orderBy('position')));
-                    let mappedCoaches = coachSnap.docs.map(d => ({ id: d.data().coach_id, type: d.data().coach_type, label: d.data().label, dbId: d.id }));
+                    let mappedCoaches = [];
+                    try {
+                        const layoutRes = await api.getSeatLayout(tData.train_number);
+                        if (layoutRes && layoutRes.coaches) {
+                            const bMap = {};
+                            mappedCoaches = layoutRes.coaches.map((c, i) => {
+                                bMap[c.coachId] = c;
+                                return { id: c.coachId, type: c.classCode, label: c.coachId, dbId: `b_${i}` };
+                            });
+                            setBackendCoachMap(bMap);
+                        }
+                    } catch (e) {
+                         console.warn("[useSmartRail] Failed to load layout:", e);
+                    }
+
+                    if (mappedCoaches.length === 0) {
+                        const coachSnap = await getDocs(query(collection(db, 'coaches'), where('train_id', '==', tData.id), orderBy('position')));
+                        mappedCoaches = coachSnap.docs.map(d => ({ id: d.data().coach_id, type: d.data().coach_type, label: d.data().label || d.data().coach_id, dbId: d.id }));
+                    }
                     
                     if (assignedCoachId && assignmentData?.coach_ids?.length > 0) {
-                        mappedCoaches = mappedCoaches.filter(c => assignmentData.coach_ids.includes(c.id));
+                        const targetIds = assignmentData.coach_ids.map(id => id.toUpperCase());
+                        mappedCoaches = mappedCoaches.filter(c => targetIds.includes(c.id.toUpperCase()));
                     }
                     
                     setCoaches(mappedCoaches);
-                    setSelectedCoach(assignedCoachId || mappedCoaches[0]?.id);
+                    const initialCoach = mappedCoaches.find(c => c.id.toUpperCase() === (assignedCoachId || '').toUpperCase())?.id || mappedCoaches[0]?.id;
+                    setSelectedCoach(initialCoach);
 
                     const pnrSnap = await getDocs(query(collection(db, 'pnr_bookings'), where('trainNumber', '==', String(tData.train_number))));
                     let allPax = [];

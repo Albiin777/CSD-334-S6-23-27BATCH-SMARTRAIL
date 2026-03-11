@@ -1,10 +1,16 @@
 import { useState, useEffect, useRef } from "react";
 import api from "../../api/train.api";
 import { db } from "../../utils/firebaseClient";
-import { collection, query, where, getDocs, addDoc, deleteDoc, doc, orderBy } from "firebase/firestore";
+import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, orderBy } from "firebase/firestore";
 
-const today = new Date().toISOString().split("T")[0];
-const maxDate = new Date(new Date().getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]; // 2 months from now
+const getLocalISODate = (date = new Date()) => {
+    const d = new Date(date);
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().split("T")[0];
+};
+
+const today = getLocalISODate();
+const maxDate = getLocalISODate(new Date(new Date().getTime() + 60 * 24 * 60 * 60 * 1000)); // 2 months from now
 
 const formatTime = (timeStr) => {
     if (!timeStr) return "";
@@ -28,6 +34,7 @@ export default function DutyAssignments() {
     const [trainResults, setTrainResults] = useState([]);
     const [coachList, setCoachList] = useState([]);
     const [selectedCoaches, setSelectedCoaches] = useState([]);
+    const [editingId, setEditingId] = useState(null);
 
     const [form, setForm] = useState({
         tte_name: "", tte_id: "", tte_email: "",
@@ -238,10 +245,12 @@ export default function DutyAssignments() {
 
         // Running Day Validation
         if (form.train_no && runningDays.length > 0) {
-            const dateObj = new Date(form.duty_date);
-            const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
-            if (!runningDays.includes(dayName)) {
-                setError(`Train ${form.train_no} does not run on ${dayName}`);
+            const [y, m, d] = form.duty_date.split('-').map(Number);
+            const dateObj = new Date(y, m - 1, d);
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const shortDay = days[dateObj.getDay()];
+            if (!runningDays.includes(shortDay)) {
+                setError(`Train ${form.train_no} does not run on ${shortDay}`);
                 setSaving(false);
                 return;
             }
@@ -263,18 +272,31 @@ export default function DutyAssignments() {
 
         setSaving(true);
         try {
-            await addDoc(collection(db, "tte_assignments"), {
+            const assignmentData = {
                 ...form,
                 coach_ids: selectedCoaches,
                 status: "active",
-                created_at: new Date().toISOString()
-            });
-            setSuccess(true);
+                updated_at: new Date().toISOString()
+            };
+
+            if (editingId) {
+                await updateDoc(doc(db, "tte_assignments", editingId), assignmentData);
+                setSuccess(true);
+            } else {
+                await addDoc(collection(db, "tte_assignments"), {
+                    ...assignmentData,
+                    created_at: new Date().toISOString()
+                });
+                setSuccess(true);
+            }
+
             setTimeout(() => setSuccess(false), 3000);
             
             const aSnap = await getDocs(query(collection(db, "tte_assignments"), orderBy("created_at", "desc")));
             setAssignments(aSnap.docs.map(d => ({ id: d.id, ...d.data() })));
             
+            // Reset
+            setEditingId(null);
             setForm({ tte_name: "", tte_id: "", tte_email: "", train_no: "", train_name: "", source_station: "", dest_station: "", duty_date: today, shift_start: "14:00", shift_end: "23:00", notes: "" });
             setTteSearch("");
             setSelectedCoaches([]); setCoachList([]); setSearchQ("");
@@ -284,10 +306,64 @@ export default function DutyAssignments() {
         setSaving(false);
     };
 
+    const editAssignment = async (a) => {
+        setEditingId(a.id);
+        const [trainNo, trainName] = [a.train_no, a.train_name];
+
+        setForm({
+            tte_name: a.tte_name || "",
+            tte_id: a.tte_id || "",
+            tte_email: a.tte_email || "",
+            train_no: trainNo || "",
+            train_name: trainName || "",
+            source_station: a.source_station || "",
+            dest_station: a.dest_station || "",
+            duty_date: a.duty_date || today,
+            shift_start: a.shift_start || "14:00",
+            shift_end: a.shift_end || "23:00",
+            notes: a.notes || ""
+        });
+        
+        setTteSearch(a.tte_name || "");
+        setSearchQ(trainNo ? `${trainName} (${trainNo})` : "");
+        setSelectedCoaches(a.coach_ids || []);
+
+        // Fetch coach list and schedule for this train to populate min/max constraints
+        try {
+            const [layout, schedule] = await Promise.all([
+                api.getSeatLayout(trainNo),
+                api.getTrainSchedule(trainNo)
+            ]);
+            
+            if (layout?.coaches) setCoachList(layout.coaches.map(c => ({ id: c.coachId, class: c.classCode })));
+            
+            if (schedule && schedule.length > 0) {
+                setMinStartTime(schedule[0].departureTime);
+                setLimitEndTime(schedule[schedule.length - 1].arrivalTime);
+            }
+        } catch (e) {
+            console.error("Fetch constraints error:", e);
+        }
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const cancelEdit = () => {
+        setEditingId(null);
+        setForm({ tte_name: "", tte_id: "", tte_email: "", train_no: "", train_name: "", source_station: "", dest_station: "", duty_date: today, shift_start: "14:00", shift_end: "23:00", notes: "" });
+        setTteSearch("");
+        setSelectedCoaches([]); setCoachList([]); setSearchQ("");
+        setError("");
+        setMinStartTime("");
+        setLimitEndTime("");
+    };
+
     const deleteAssignment = async (id) => {
+        if (!window.confirm("Delete this assignment?")) return;
         try {
             await deleteDoc(doc(db, "tte_assignments", id));
             setAssignments(prev => prev.filter(a => a.id !== id));
+            if (editingId === id) cancelEdit();
         } catch (err) {
             console.error(err);
         }
@@ -313,11 +389,15 @@ export default function DutyAssignments() {
             </div>
             <div className="grid grid-cols-1 xl:grid-cols-5 gap-5">
 
-                {/* Assignment Form */}
-                <form onSubmit={handleSubmit} className="xl:col-span-2 bg-[#111827] border border-white/5 rounded-2xl p-5 space-y-4 self-start sticky top-4">
-                    <h2 className="font-bold text-white">New Assignment</h2>
+                <form onSubmit={handleSubmit} className={`xl:col-span-2 bg-[#111827] border ${editingId ? 'border-[#4ab86d]/40' : 'border-white/5'} rounded-2xl p-5 space-y-4 self-start sticky top-4 transition-colors`}>
+                    <div className="flex items-center justify-between">
+                        <h2 className="font-bold text-white">{editingId ? 'Edit Assignment' : 'New Assignment'}</h2>
+                        {editingId && (
+                            <button type="button" onClick={cancelEdit} className="text-[10px] font-bold text-gray-500 hover:text-white uppercase tracking-widest">Cancel Edit</button>
+                        )}
+                    </div>
                     {error && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl px-4 py-2.5 font-bold">{error}</div>}
-                    {success && <div className="bg-green-500/10 border border-green-500/20 text-green-400 text-xs rounded-xl px-4 py-2.5 font-bold">✓ Assignment created!</div>}
+                    {success && <div className="bg-green-500/10 border border-green-500/20 text-green-400 text-xs rounded-xl px-4 py-2.5 font-bold">✓ Assignment {editingId ? 'updated' : 'created'}!</div>}
 
                     {/* Select TTE Search */}
                     <div className="relative" ref={tteRef}>
@@ -564,15 +644,22 @@ export default function DutyAssignments() {
                             className="w-full bg-[#080f1e] text-white border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4ab86d]" />
                     </div>
 
-                    <button type="submit" disabled={saving}
-                        className="w-full bg-[#4ab86d] hover:bg-[#3da85c] disabled:opacity-50 text-black font-black py-3 rounded-xl transition">
-                        {saving ? "Saving..." : (
-                            <span className="flex items-center gap-2 justify-center">
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                Create Assignment
-                            </span>
+                    <div className="flex gap-2">
+                        {editingId && (
+                            <button type="button" onClick={cancelEdit} className="w-1/3 bg-white/5 hover:bg-white/10 text-white font-bold py-3 rounded-xl transition">
+                                Cancel
+                            </button>
                         )}
-                    </button>
+                        <button type="submit" disabled={saving}
+                            className={`${editingId ? 'flex-1' : 'w-full'} bg-[#4ab86d] hover:bg-[#3da85c] disabled:opacity-50 text-black font-black py-3 rounded-xl transition`}>
+                            {saving ? "Saving..." : (
+                                <span className="flex items-center gap-2 justify-center">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    {editingId ? "Save Changes" : "Create Assignment"}
+                                </span>
+                            )}
+                        </button>
+                    </div>
                 </form>
 
                 {/* Assignments List */}
@@ -614,8 +701,12 @@ export default function DutyAssignments() {
                                             )}
                                             {a.notes && <div className="text-xs text-gray-500 mt-1 italic">{a.notes}</div>}
                                         </div>
-                                        <button onClick={() => deleteAssignment(a.id)}
-                                            className="text-gray-600 hover:text-red-400 transition text-sm shrink-0">🗑</button>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <button onClick={() => editAssignment(a)}
+                                                className="text-gray-600 hover:text-blue-400 transition text-lg" title="Edit Assignment">✎</button>
+                                            <button onClick={() => deleteAssignment(a.id)}
+                                                className="text-gray-600 hover:text-red-400 transition text-base" title="Delete Assignment">🗑</button>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
