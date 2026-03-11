@@ -125,6 +125,11 @@ export function SmartRailProvider({ children }) {
         return () => clearInterval(timer);
     }, []);
 
+    // Debug: log when coaches/selectedCoach changes
+    useEffect(() => {
+        console.log("[useSmartRail] State update - coaches:", coaches.length, "selectedCoach:", selectedCoach, "backendCoachMap keys:", Object.keys(backendCoachMap));
+    }, [coaches, selectedCoach, backendCoachMap]);
+
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             // Remove instant unsubscribe to allow profile updates to reflect if auth changes or loads late
