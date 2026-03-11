@@ -113,17 +113,8 @@ export default function PaymentGateway() {
     const handlePay = async () => {
         setProcessing(true);
 
-        // Processing waits 3 seconds
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-
-        // Simulate 30% chance of payment failure, or forced failure if name is 'fail'
-        const isFailure = Math.random() < 0.3 || (selectedMethod === 'card' && cardDetails.name.toLowerCase().includes('fail'));
-
-        if (isFailure) {
-            setProcessing(false);
-            setFailed(true);
-            return;
-        }
+        // Processing delay for realistic UX
+        await new Promise((resolve) => setTimeout(resolve, 2000));
 
         try {
             let result;
@@ -146,7 +137,7 @@ export default function PaymentGateway() {
             }, 700);
         } catch (err) {
             setProcessing(false);
-            alert("Payment failed: " + (err.message || "Unknown error"));
+            setFailed(true);
         }
     };
 
