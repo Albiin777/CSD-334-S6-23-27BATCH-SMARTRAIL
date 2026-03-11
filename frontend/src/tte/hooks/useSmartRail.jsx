@@ -99,11 +99,7 @@ export function SmartRailProvider({ children }) {
     const [selectedCoach, setSelectedCoach] = useState(null);
     const [passengers, setPassengers] = useState([]);
     const [coaches, setCoaches] = useState([]);
-    const [stations, setStations] = useState([
-        'Chennai Central', 'Perambur', 'Arakkonam Jn', 'Renigunta Jn',
-        'Vijayawada Jn', 'Warangal', 'Nagpur Jn', 'Bhopal Jn',
-        'Jhansi Jn', 'Gwalior Jn', 'Agra Cantt', 'New Delhi'
-    ]);
+    const [stations, setStations] = useState([]); // Will be populated from train schedule API
     const [incidents, setIncidents] = useState([]);
     const [fines, setFines] = useState([]);
     const [reviews, setReviews] = useState([]);
@@ -380,42 +376,74 @@ export function SmartRailProvider({ children }) {
                     });
                     setPassengers(allPax);
 
-                    // Fetch reviews for this train
+                    // Fetch reviews for this train (no orderBy to avoid index requirement)
                     try {
                         const reviewsSnap = await getDocs(query(
                             collection(db, 'reviews'), 
                             where('trainNumber', '==', String(tData.train_number)),
-                            orderBy('created_at', 'desc'),
-                            limit(50)
+                            limit(100)
                         ));
+                        console.log("[useSmartRail] Found", reviewsSnap.docs.length, "reviews for train", tData.train_number);
                         const loadedReviews = reviewsSnap.docs.map(d => {
                             const data = d.data();
+                            // Handle Firestore Timestamp
+                            let dateStr = '';
+                            if (data.created_at) {
+                                if (data.created_at.toDate) {
+                                    dateStr = data.created_at.toDate().toLocaleDateString('en-IN');
+                                } else if (data.created_at._seconds) {
+                                    dateStr = new Date(data.created_at._seconds * 1000).toLocaleDateString('en-IN');
+                                } else {
+                                    dateStr = new Date(data.created_at).toLocaleDateString('en-IN');
+                                }
+                            }
                             return {
                                 id: d.id,
-                                passenger: data.passenger_name || data.passengerName || 'Anonymous',
+                                passenger: data.passenger_name || data.passengerName || data.userName || 'Anonymous',
                                 pnr: data.pnr || '',
                                 coach: data.coach || '',
                                 seat: data.seat || '',
                                 rating: data.rating || 0,
                                 category: data.category || 'General',
-                                comment: data.comment || data.review || '',
+                                comment: data.comment || data.review || data.text || '',
                                 helpful: data.helpful || 0,
-                                date: data.created_at ? new Date(data.created_at).toLocaleDateString('en-IN') : ''
+                                date: dateStr,
+                                created_at: data.created_at
                             };
+                        });
+                        // Sort by date descending (most recent first)
+                        loadedReviews.sort((a, b) => {
+                            const getTime = (item) => {
+                                if (!item.created_at) return 0;
+                                if (item.created_at.toDate) return item.created_at.toDate().getTime();
+                                if (item.created_at._seconds) return item.created_at._seconds * 1000;
+                                return new Date(item.created_at).getTime();
+                            };
+                            return getTime(b) - getTime(a);
                         });
                         setReviews(loadedReviews);
                     } catch (e) { console.warn("[useSmartRail] Reviews fetch failed:", e); }
 
-                    // Fetch complaints for this train
+                    // Fetch complaints for this train (no orderBy to avoid index requirement)
                     try {
                         const complaintsSnap = await getDocs(query(
                             collection(db, 'complaints'),
                             where('train_number', '==', String(tData.train_number)),
-                            orderBy('created_at', 'desc'),
-                            limit(50)
+                            limit(100)
                         ));
                         const loadedComplaints = complaintsSnap.docs.map(d => {
                             const data = d.data();
+                            // Handle Firestore Timestamp
+                            let dateStr = '';
+                            if (data.created_at) {
+                                if (data.created_at.toDate) {
+                                    dateStr = data.created_at.toDate().toLocaleDateString('en-IN');
+                                } else if (data.created_at._seconds) {
+                                    dateStr = new Date(data.created_at._seconds * 1000).toLocaleDateString('en-IN');
+                                } else {
+                                    dateStr = new Date(data.created_at).toLocaleDateString('en-IN');
+                                }
+                            }
                             return {
                                 id: data.complaint_id || `CMP-${d.id.slice(0,6).toUpperCase()}`,
                                 dbId: d.id,
@@ -427,22 +455,45 @@ export function SmartRailProvider({ children }) {
                                 status: data.status === 'open' ? 'Open' : data.status === 'in-progress' ? 'In Progress' : data.status === 'resolved' ? 'Resolved' : data.status || 'Open',
                                 description: data.description || data.complaint || '',
                                 responses: [],
-                                date: data.created_at ? new Date(data.created_at).toLocaleDateString('en-IN') : ''
+                                date: dateStr,
+                                created_at: data.created_at
                             };
+                        });
+                        // Sort by date descending
+                        loadedComplaints.sort((a, b) => {
+                            const getTime = (item) => {
+                                if (!item.created_at) return 0;
+                                if (item.created_at.toDate) return item.created_at.toDate().getTime();
+                                if (item.created_at._seconds) return item.created_at._seconds * 1000;
+                                return new Date(item.created_at).getTime();
+                            };
+                            return getTime(b) - getTime(a);
                         });
                         setComplaints(loadedComplaints);
                     } catch (e) { console.warn("[useSmartRail] Complaints fetch failed:", e); }
 
-                    // Fetch incidents for this train
+                    // Fetch incidents for this train (no orderBy to avoid index requirement)
                     try {
                         const incidentsSnap = await getDocs(query(
                             collection(db, 'incidents'),
                             where('train_number', '==', String(tData.train_number)),
-                            orderBy('created_at', 'desc'),
-                            limit(50)
+                            limit(100)
                         ));
                         const loadedIncidents = incidentsSnap.docs.map(d => {
                             const data = d.data();
+                            // Handle Firestore Timestamp
+                            let timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                            let dateStr = new Date().toLocaleDateString('en-IN');
+                            if (data.created_at) {
+                                if (data.created_at.toDate) {
+                                    timeStr = data.created_at.toDate().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                                    dateStr = data.created_at.toDate().toLocaleDateString('en-IN');
+                                } else if (data.created_at._seconds) {
+                                    const dt = new Date(data.created_at._seconds * 1000);
+                                    timeStr = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                                    dateStr = dt.toLocaleDateString('en-IN');
+                                }
+                            }
                             return {
                                 id: d.id,
                                 type: data.type || 'General',
@@ -461,6 +512,48 @@ export function SmartRailProvider({ children }) {
                         });
                         setIncidents(loadedIncidents);
                     } catch (e) { console.warn("[useSmartRail] Incidents fetch failed:", e); }
+
+                    // Fetch fines for this train
+                    try {
+                        const finesSnap = await getDocs(query(
+                            collection(db, 'fines'),
+                            where('train_number', '==', String(tData.train_number)),
+                            limit(100)
+                        ));
+                        const loadedFines = finesSnap.docs.map(d => {
+                            const data = d.data();
+                            let timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                            let dateStr = new Date().toLocaleDateString('en-IN');
+                            if (data.created_at) {
+                                if (data.created_at.toDate) {
+                                    timeStr = data.created_at.toDate().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                                    dateStr = data.created_at.toDate().toLocaleDateString('en-IN');
+                                } else if (data.created_at._seconds) {
+                                    const dt = new Date(data.created_at._seconds * 1000);
+                                    timeStr = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                                    dateStr = dt.toLocaleDateString('en-IN');
+                                }
+                            }
+                            return {
+                                id: d.id,
+                                receipt: data.receipt_number || `FINE-${d.id.slice(0,8)}`,
+                                passenger: data.passenger || 'Unknown',
+                                pnr: data.pnr || '',
+                                reason: data.reason || '',
+                                amount: data.amount || 0,
+                                method: data.payment_method || 'Cash',
+                                time: timeStr,
+                                date: dateStr
+                            };
+                        });
+                        // Sort by date (most recent first)
+                        loadedFines.sort((a, b) => {
+                            const aTime = new Date(`${a.date} ${a.time}`).getTime();
+                            const bTime = new Date(`${b.date} ${b.time}`).getTime();
+                            return bTime - aTime;
+                        });
+                        setFines(loadedFines);
+                    } catch (e) { console.warn("[useSmartRail] Fines fetch failed:", e); }
 
                     setDataSource('firestore');
                 } catch (err) {
@@ -644,6 +737,55 @@ export function SmartRailProvider({ children }) {
         }
     }, [trainDetails, tteDetails, safeCoach, tteInfo.name, addLog]);
 
+    // Add fine to Firebase
+    const addFine = useCallback(async (fine) => {
+        try {
+            // Generate receipt number
+            const receiptNo = `FINE-${Date.now().toString().slice(-8)}`;
+            
+            // Create fine document in Firestore
+            const fineDoc = {
+                passenger: fine.passenger,
+                pnr: fine.pnr || '',
+                reason: fine.reason,
+                amount: fine.amount,
+                payment_method: fine.method || 'Cash',
+                receipt_number: receiptNo,
+                train_number: trainDetails?.train_number || '',
+                train_name: trainDetails?.train_name || tteDetails?.trainName || '',
+                issued_by: tteInfo.name,
+                issued_by_id: tteDetails?.id || 'TTE',
+                coach: safeCoach,
+                status: 'Paid',
+                created_at: serverTimestamp()
+            };
+            
+            const docRef = await addDoc(collection(db, 'fines'), fineDoc);
+            
+            // Update local state
+            const newFine = {
+                id: docRef.id,
+                receipt: receiptNo,
+                passenger: fine.passenger,
+                pnr: fine.pnr || '',
+                reason: fine.reason,
+                amount: fine.amount,
+                method: fine.method || 'Cash',
+                time: fine.time || new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                date: new Date().toLocaleDateString('en-IN')
+            };
+            
+            setFines(prev => [newFine, ...prev]);
+            addLog(`Fine issued: ₹${fine.amount} to ${fine.passenger}`, 'fine');
+            
+            return { success: true, id: docRef.id, receipt: receiptNo };
+        } catch (error) {
+            console.error('[useSmartRail] Failed to add fine:', error);
+            addLog(`Failed to issue fine: ${error.message}`, 'error');
+            return { success: false, error: error.message };
+        }
+    }, [trainDetails, tteDetails, safeCoach, tteInfo.name, addLog]);
+
     const value = {
         time, passengers: coachPassengers, allPassengers: passengers, coaches, incidents, fines, reviews, complaints,
         selectedCoach, setSelectedCoach, tteInfo, stats, seats, dataSource, loading, error,
@@ -653,7 +795,7 @@ export function SmartRailProvider({ children }) {
         currentCoachType, currentConfig,
         currentStation: stations[stationIndex] || stations[0],
         setFines, setIncidents, setComplaints,
-        addFine: (fine) => { setFines(prev => [...prev, { ...fine, id: Date.now() }]); addLog(`Fine issued: ₹${fine.amount}`, 'fine'); },
+        addFine,
         addIncident
     };
 

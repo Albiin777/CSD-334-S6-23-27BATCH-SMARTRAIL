@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSmartRail } from '../hooks/useSmartRail';
-import { Search, CheckCircle, XCircle, AlertTriangle, Shield, User, Armchair, ChevronDown, QrCode, Camera, Zap } from 'lucide-react';
+import { Search, CheckCircle, XCircle, AlertTriangle, Shield, User, Armchair, ChevronDown, QrCode, Camera, Zap, Train, MapPin, Calendar, Clock, Ticket, X, Loader2 } from 'lucide-react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
+import { db } from '../../utils/firebaseClient';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import QRCode from 'react-qr-code';
 
 const statusColors = {
     booked: 'bg-red-500 hover:bg-red-400',
@@ -10,11 +13,200 @@ const statusColors = {
     waitlist: 'bg-orange-500 hover:bg-orange-400',
 };
 
+/* Ticket Preview Modal - Shows full e-ticket after QR scan */
+function TicketPreview({ booking, onClose, onVerify }) {
+    if (!booking) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto relative animate-in fade-in zoom-in duration-300">
+                {/* Close button */}
+                <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition z-10">
+                    <X size={18} className="text-gray-600" />
+                </button>
+
+                {/* Ticket Header */}
+                <div className="bg-gradient-to-r from-emerald-500 to-green-600 px-6 py-5 rounded-t-3xl">
+                    <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                            <Train size={24} className="text-white" />
+                        </div>
+                        <div>
+                            <h3 className="text-white font-bold text-lg">{booking.trainName || `Train #${booking.trainNumber}`}</h3>
+                            <p className="text-white/80 text-xs font-mono">#{booking.trainNumber}</p>
+                        </div>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2">
+                        <CheckCircle size={16} className="text-white" />
+                        <span className="text-white text-sm font-bold">E-Ticket Verified</span>
+                    </div>
+                </div>
+
+                {/* Ticket Body */}
+                <div className="px-6 py-5">
+                    {/* PNR & Date */}
+                    <div className="grid grid-cols-2 gap-4 mb-5">
+                        <div>
+                            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-1">PNR Number</p>
+                            <p className="font-bold text-gray-900 font-mono text-lg">{booking.pnr}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-1">Journey Date</p>
+                            <p className="font-bold text-gray-900">{booking.journeyDate ? new Date(booking.journeyDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}</p>
+                        </div>
+                    </div>
+
+                    {/* Route */}
+                    <div className="flex items-center justify-between gap-4 mb-5 bg-gray-50 rounded-xl p-4">
+                        <div className="flex-1">
+                            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-1 flex items-center gap-1">
+                                <MapPin size={10} /> From
+                            </p>
+                            <p className="font-bold text-gray-900 text-sm">{booking.source || 'N/A'}</p>
+                        </div>
+                        <div className="flex flex-col items-center">
+                            <div className="w-8 h-[2px] bg-gray-300"></div>
+                            <Train size={14} className="text-gray-400 my-1" />
+                            <div className="w-8 h-[2px] bg-gray-300"></div>
+                        </div>
+                        <div className="flex-1 text-right">
+                            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-1 flex items-center gap-1 justify-end">
+                                <MapPin size={10} /> To
+                            </p>
+                            <p className="font-bold text-gray-900 text-sm">{booking.destination || 'N/A'}</p>
+                        </div>
+                    </div>
+
+                    {/* Class & Coach Info */}
+                    <div className="grid grid-cols-3 gap-3 mb-5">
+                        <div className="bg-gray-50 rounded-xl p-3 text-center">
+                            <p className="text-[9px] text-gray-400 uppercase font-bold mb-0.5">Class</p>
+                            <p className="font-bold text-gray-900 text-sm">{booking.classCode || 'N/A'}</p>
+                        </div>
+                        <div className="bg-gray-50 rounded-xl p-3 text-center">
+                            <p className="text-[9px] text-gray-400 uppercase font-bold mb-0.5">Coach</p>
+                            <p className="font-bold text-gray-900 text-sm">{booking.passengers?.[0]?.seatNumber?.split('-')[0] || 'N/A'}</p>
+                        </div>
+                        <div className="bg-gray-50 rounded-xl p-3 text-center">
+                            <p className="text-[9px] text-gray-400 uppercase font-bold mb-0.5">Total Fare</p>
+                            <p className="font-bold text-emerald-600 text-sm">₹{booking.totalFare || 0}</p>
+                        </div>
+                    </div>
+
+                    {/* Dashed separator */}
+                    <div className="relative my-6">
+                        <div className="border-t-2 border-dashed border-gray-200"></div>
+                        <div className="absolute -left-9 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-[#2B2B2B]"></div>
+                        <div className="absolute -right-9 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-[#2B2B2B]"></div>
+                    </div>
+
+                    {/* Passengers */}
+                    <div className="mb-5">
+                        <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-3 flex items-center gap-1">
+                            <User size={12} /> Passengers ({booking.passengers?.length || 0})
+                        </p>
+                        <div className="space-y-2">
+                            {booking.passengers?.map((p, i) => (
+                                <div key={i} className="flex items-center justify-between bg-gray-50 rounded-xl p-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-xs font-bold text-gray-600">
+                                            {i + 1}
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold text-gray-900 text-sm">{p.name}</p>
+                                            <p className="text-xs text-gray-500">{p.age}yr • {p.gender}</p>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="font-bold text-gray-900 text-sm">{p.seatNumber || 'WL'}</p>
+                                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                                            p.status === 'CNF' || p.status === 'Confirmed' 
+                                                ? 'bg-emerald-100 text-emerald-700' 
+                                                : p.status === 'RAC' 
+                                                    ? 'bg-amber-100 text-amber-700' 
+                                                    : 'bg-red-100 text-red-700'
+                                        }`}>{p.status}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* QR Code */}
+                    <div className="flex flex-col items-center py-4 border-t border-gray-100">
+                        <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm mb-2">
+                            <QRCode value={booking.pnr || ''} size={100} level="L" />
+                        </div>
+                        <p className="text-[10px] text-gray-400 font-medium">Scan for digital verification</p>
+                    </div>
+                </div>
+
+                {/* Verify Button */}
+                <div className="px-6 pb-6">
+                    <button 
+                        onClick={onVerify}
+                        className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-emerald-500 text-white rounded-xl font-bold text-sm hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/30"
+                    >
+                        <CheckCircle size={18} /> Mark All Passengers Verified
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 /* Integrated Camera QR Scanner component */
-function QRScanner({ onScanResult, allPassengers }) {
+function QRScanner({ onScanResult, onBookingFound, allPassengers }) {
     const [scanning, setScanning] = useState(false);
     const [manualPnr, setManualPnr] = useState('');
     const [scanHistory, setScanHistory] = useState([]);
+    const [loading, setLoading] = useState(false);
+
+    // Fetch booking from Firestore by PNR
+    const fetchBookingByPnr = async (pnr) => {
+        setLoading(true);
+        try {
+            const bookingsSnap = await getDocs(query(
+                collection(db, 'pnr_bookings'),
+                where('pnr', '==', pnr)
+            ));
+            
+            if (!bookingsSnap.empty) {
+                const bookingDoc = bookingsSnap.docs[0];
+                const bookingData = { id: bookingDoc.id, ...bookingDoc.data() };
+                console.log('[QRScanner] Found booking:', bookingData);
+                onBookingFound(bookingData);
+                return bookingData;
+            }
+            return null;
+        } catch (err) {
+            console.error('[QRScanner] Error fetching booking:', err);
+            return null;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Parse QR code data - handles both JSON format and plain PNR
+    const parseQRData = (decodedText) => {
+        try {
+            // Try parsing as JSON first (new format)
+            const parsed = JSON.parse(decodedText);
+            return {
+                pnr: parsed.pnr,
+                train: parsed.train,
+                date: parsed.date,
+                passengers: parsed.passengers,
+                isJson: true
+            };
+        } catch {
+            // Fall back to plain PNR string
+            return {
+                pnr: decodedText.trim(),
+                isJson: false
+            };
+        }
+    };
 
     useEffect(() => {
         if (!scanning) return;
@@ -25,18 +217,37 @@ function QRScanner({ onScanResult, allPassengers }) {
             /* verbose= */ false
         );
 
-        scanner.render((decodedText) => {
-            const pnrCode = decodedText.trim();
+        scanner.render(async (decodedText) => {
+            const qrData = parseQRData(decodedText);
+            const pnrCode = qrData.pnr;
+            
+            // First, try to find in local passengers list
             const found = allPassengers.find(p => p.pnr === pnrCode);
-            if (found) {
-                onScanResult(found);
-                setScanHistory(prev => [{ pnr: found.pnr, name: found.name, time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), status: 'success' }, ...prev].slice(0, 10));
+            
+            // Also fetch full booking from Firestore for ticket preview
+            const booking = await fetchBookingByPnr(pnrCode);
+            
+            if (found || booking) {
+                if (found) {
+                    onScanResult(found);
+                }
+                setScanHistory(prev => [{ 
+                    pnr: pnrCode, 
+                    name: found?.name || booking?.passengers?.[0]?.name || 'Found', 
+                    time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 
+                    status: 'success' 
+                }, ...prev].slice(0, 10));
 
                 // Success: pause scan mode 
                 scanner.clear().catch(console.error);
                 setScanning(false);
             } else {
-                setScanHistory(prev => [{ pnr: pnrCode.substring(0, 10), name: 'Not Found', time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), status: 'error' }, ...prev].slice(0, 10));
+                setScanHistory(prev => [{ 
+                    pnr: pnrCode.substring(0, 10), 
+                    name: 'Not Found', 
+                    time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 
+                    status: 'error' 
+                }, ...prev].slice(0, 10));
             }
         }, (errorMessage) => {
             // Ignore normal non-detection frames
@@ -45,24 +256,52 @@ function QRScanner({ onScanResult, allPassengers }) {
         return () => {
             try { scanner.clear().catch(e => { }); } catch (e) { }
         };
-    }, [scanning, allPassengers, onScanResult]);
+    }, [scanning, allPassengers, onScanResult, onBookingFound]);
 
-    const handleManualEntry = () => {
+    const handleManualEntry = async () => {
         if (!manualPnr.trim()) return;
-        const found = allPassengers.find(p => p.pnr === manualPnr.trim());
-        if (found) {
-            onScanResult(found);
-            setScanHistory(prev => [{ pnr: found.pnr, name: found.name, time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), status: 'success' }, ...prev].slice(0, 10));
+        
+        const pnrCode = manualPnr.trim();
+        const found = allPassengers.find(p => p.pnr === pnrCode);
+        
+        // Also fetch full booking from Firestore
+        const booking = await fetchBookingByPnr(pnrCode);
+        
+        if (found || booking) {
+            if (found) {
+                onScanResult(found);
+            }
+            setScanHistory(prev => [{ 
+                pnr: pnrCode, 
+                name: found?.name || booking?.passengers?.[0]?.name || 'Found', 
+                time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 
+                status: 'success' 
+            }, ...prev].slice(0, 10));
         } else {
-            setScanHistory(prev => [{ pnr: manualPnr, name: 'Not Found', time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), status: 'error' }, ...prev].slice(0, 10));
+            setScanHistory(prev => [{ 
+                pnr: pnrCode, 
+                name: 'Not Found', 
+                time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 
+                status: 'error' 
+            }, ...prev].slice(0, 10));
         }
         setManualPnr('');
     };
 
     return (
         <div className="space-y-5">
+            {/* Loading overlay */}
+            {loading && (
+                <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center z-20">
+                    <div className="flex flex-col items-center gap-2">
+                        <Loader2 size={32} className="text-emerald-400 animate-spin" />
+                        <p className="text-sm text-white font-semibold">Fetching ticket...</p>
+                    </div>
+                </div>
+            )}
+            
             {/* Scanner Viewfinder */}
-            <div className="bg-[#1a1a1a] rounded-2xl border border-[#D4D4D4]/10 overflow-hidden">
+            <div className="bg-[#1a1a1a] rounded-2xl border border-[#D4D4D4]/10 overflow-hidden relative">
                 <div className="relative w-full aspect-[4/3] max-h-[400px] bg-black flex flex-col items-center justify-center overflow-hidden">
                     {scanning ? (
                         <div id="reader" className="w-full h-full [&>div]:!border-none [&>div>video]:!object-cover" />
@@ -77,9 +316,10 @@ function QRScanner({ onScanResult, allPassengers }) {
                 {/* Scan button */}
                 <div className="p-5 space-y-4">
                     <button onClick={() => setScanning(!scanning)}
+                        disabled={loading}
                         className={`w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl text-sm font-bold transition-all ${scanning
                             ? 'bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/20'
-                            : 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/20'}`}>
+                            : 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/20'} disabled:opacity-50`}>
                         {scanning ? <><Camera size={18} /> Stop Camera</> : <><Camera size={18} /> Start Camera</>}
                     </button>
 
@@ -90,11 +330,13 @@ function QRScanner({ onScanResult, allPassengers }) {
                             <input type="text" value={manualPnr} onChange={e => setManualPnr(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && handleManualEntry()}
                                 placeholder="Enter PNR manually…"
-                                className="bg-transparent text-sm text-white placeholder:text-[#9CA3AF] outline-none w-full" />
+                                disabled={loading}
+                                className="bg-transparent text-sm text-white placeholder:text-[#9CA3AF] outline-none w-full disabled:opacity-50" />
                         </div>
                         <button onClick={handleManualEntry}
-                            className="px-4 py-2.5 bg-blue-500 text-white rounded-xl text-xs font-bold hover:bg-blue-600 transition flex items-center gap-1.5">
-                            <Zap size={14} /> Lookup
+                            disabled={loading}
+                            className="px-4 py-2.5 bg-blue-500 text-white rounded-xl text-xs font-bold hover:bg-blue-600 transition flex items-center gap-1.5 disabled:opacity-50">
+                            {loading ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />} Lookup
                         </button>
                     </div>
                 </div>
@@ -127,6 +369,7 @@ export default function PassengerVerify() {
     const [selected, setSelected] = useState(null);
     const [viewMode, setViewMode] = useState('table');
     const [showCoachList, setShowCoachList] = useState(false);
+    const [scannedBooking, setScannedBooking] = useState(null); // Full booking data from Firestore
 
     const tabs = [
         { key: 'name', label: 'Name' }, { key: 'pnr', label: 'PNR' },
@@ -145,16 +388,29 @@ export default function PassengerVerify() {
 
     const getAlerts = (p) => {
         const alerts = [];
-        if (p.flags.includes('blacklisted')) alerts.push({ type: 'danger', text: '⚠️ Blacklisted Passenger' });
-        if (p.flags.includes('senior')) alerts.push({ type: 'info', text: '👴 Senior Citizen — Verify priority seating' });
-        if (p.flags.includes('pregnant')) alerts.push({ type: 'warning', text: '🤰 Pregnant — Lower berth recommended' });
-        if (p.flags.includes('medical')) alerts.push({ type: 'warning', text: '🏥 Medical condition — Special attention' });
+        if (p.flags?.includes('blacklisted')) alerts.push({ type: 'danger', text: '⚠️ Blacklisted Passenger' });
+        if (p.flags?.includes('senior')) alerts.push({ type: 'info', text: '👴 Senior Citizen — Verify priority seating' });
+        if (p.flags?.includes('pregnant')) alerts.push({ type: 'warning', text: '🤰 Pregnant — Lower berth recommended' });
+        if (p.flags?.includes('medical')) alerts.push({ type: 'warning', text: '🏥 Medical condition — Special attention' });
         return alerts;
     };
 
     const handleSeatClick = (seat) => {
         if (seat.status === 'available') return;
         if (seat.passenger) setSelected(seat.passenger);
+    };
+
+    // Handle verifying all passengers in a scanned booking
+    const handleVerifyAllFromBooking = () => {
+        if (scannedBooking?.passengers) {
+            scannedBooking.passengers.forEach(p => {
+                const matchedPassenger = allPassengers.find(ap => ap.pnr === scannedBooking.pnr && ap.name === p.name);
+                if (matchedPassenger && !matchedPassenger.verified) {
+                    verifyPassenger(matchedPassenger.id);
+                }
+            });
+        }
+        setScannedBooking(null);
     };
 
     const coachCfg = coachConfigs[currentCoachType];
@@ -236,7 +492,12 @@ export default function PassengerVerify() {
                 {/* Left Panel: Table OR Seat Map OR QR Scanner */}
                 <div className="lg:col-span-2">
                     {viewMode === 'qr' ? (
-                        <QRScanner passengers={passengers} allPassengers={allPassengers} onScanResult={setSelected} />
+                        <QRScanner 
+                            passengers={passengers} 
+                            allPassengers={allPassengers} 
+                            onScanResult={setSelected}
+                            onBookingFound={setScannedBooking}
+                        />
                     ) : viewMode === 'table' ? (
                         <div className="bg-[#2B2B2B] rounded-2xl border border-[#D4D4D4]/10 overflow-hidden">
                             <div className="p-5 border-b border-[#D4D4D4]/10">
@@ -444,6 +705,15 @@ export default function PassengerVerify() {
                     )}
                 </div>
             </div>
+            
+            {/* Ticket Preview Modal - Shows when QR is scanned */}
+            {scannedBooking && (
+                <TicketPreview 
+                    booking={scannedBooking} 
+                    onClose={() => setScannedBooking(null)}
+                    onVerify={handleVerifyAllFromBooking}
+                />
+            )}
         </div>
     );
 }

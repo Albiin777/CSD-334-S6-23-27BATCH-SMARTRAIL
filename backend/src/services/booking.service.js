@@ -434,14 +434,16 @@ const getBookedSeatsList = async (trainNumber, journeyDate, source = null, desti
     const bookings = snapshot.docs.map(doc => doc.data());
 
     // 2. Fetch all ACTIVE (non-expired) seat blocks
+    // Note: Filter expiration in JS to avoid requiring a composite index in Firestore
     const now = new Date().toISOString();
     const blockSnapshot = await adminDb.collection('seat_blocks')
         .where('train_number', '==', String(trainNumber))
         .where('journey_date', '==', journeyDate)
-        .where('expires_at', '>', now)
         .get();
 
-    const blockedSeats = blockSnapshot.docs.map(doc => doc.data());
+    const blockedSeats = blockSnapshot.docs
+        .map(doc => doc.data())
+        .filter(data => data.expires_at > now);
 
     // 3. Extract seat numbers
     const unavailableSeatIds = new Set();

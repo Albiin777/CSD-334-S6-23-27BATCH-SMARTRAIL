@@ -139,7 +139,7 @@ export default function SeatManagement() {
                         <button onClick={() => setShowCoachList(!showCoachList)}
                             className="flex items-center gap-2 px-4 py-2.5 bg-gray-900 rounded-xl border border-[#D4D4D4]/10 text-white text-sm font-semibold hover:border-[#D4D4D4]/30 transition min-w-[220px]">
                             <span className="w-3 h-3 rounded-full shrink-0" style={{ background: coachCfg?.color || '#fff' }} />
-                            <span className="flex-1 text-left">{coaches.find(c => c.id === selectedCoach)?.label}</span>
+                            <span className="flex-1 text-left">{selectedCoach || 'Select Coach'} {coachCfg ? `(${coachCfg.label})` : ''}</span>
                             <ChevronDown size={16} className={`text-[#B3B3B3] transition-transform ${showCoachList ? 'rotate-180' : ''}`} />
                         </button>
                         {showCoachList && (
@@ -150,7 +150,7 @@ export default function SeatManagement() {
                                         <button key={c.id} onClick={() => { setSelectedCoach(c.id); setShowCoachList(false); setSelected(null); }}
                                             className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-white/5 transition ${selectedCoach === c.id ? 'bg-white/10 text-white' : 'text-[#B3B3B3]'}`}>
                                             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cfg?.color || '#6B7280' }} />
-                                            <span className="font-semibold flex-1">{c.label}</span>
+                                            <span className="font-semibold flex-1">{c.id} {cfg ? `(${cfg.label})` : ''}</span>
                                             {cfg && <span className="text-[10px] text-[#6B7280]">{cfg.berths} berths</span>}
                                             {!cfg && <span className="text-[10px] text-[#6B7280]">Unreserved</span>}
                                         </button>
@@ -160,16 +160,14 @@ export default function SeatManagement() {
                         )}
                     </div>
 
-                    {/* Coach info */}
-                    {coachCfg && (
-                        <div className="flex items-center gap-4 text-[10px] font-bold text-[#9CA3AF] uppercase tracking-wider">
-                            <span>{coachCfg.label}</span>
-                            <span>•</span>
-                            <span>{coachCfg.berths} berths</span>
-                            <span>•</span>
-                            <span>{coachCfg.bays} bays</span>
-                        </div>
-                    )}
+                    {/* Coach info - show actual counts from data */}
+                    <div className="flex items-center gap-4 text-[10px] font-bold text-[#9CA3AF] uppercase tracking-wider">
+                        <span>{coachCfg?.label || currentCoachType || 'Coach'}</span>
+                        <span>•</span>
+                        <span>{seats.length} berths</span>
+                        <span>•</span>
+                        <span>{Object.keys(bays).length} bays</span>
+                    </div>
 
                     {/* Legend */}
                     <div className="flex gap-4">
@@ -193,7 +191,7 @@ export default function SeatManagement() {
                     <div className="lg:col-span-2 bg-[#2B2B2B] rounded-2xl border border-[#D4D4D4]/10 p-5 overflow-x-auto">
                         <div className="flex items-center gap-3 mb-5 pb-3 border-b border-[#D4D4D4]/10">
                             <h3 className="text-sm font-bold text-[#B3B3B3] uppercase tracking-wider">
-                                Coach {selectedCoach} — {coachCfg?.label} Layout
+                                Coach {selectedCoach} — {coachCfg?.label || currentCoachType || 'Coach'} Layout
                             </h3>
                             <span className="text-[10px] text-[#6B7280] bg-gray-900 px-2 py-0.5 rounded-full">{coachCfg?.isChair ? 'Seating' : 'Berth'} arrangement</span>
                         </div>
