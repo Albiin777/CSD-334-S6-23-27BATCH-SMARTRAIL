@@ -22,9 +22,9 @@ const __dirname = path.dirname(__filename);
 const CONFIG = {
     // TTE Details (match with your authorized TTE email)
     tte: {
-        name: "Raisha Hashly",                    // TTE's full name
-        email: "raishahashly15@gmail.com",        // Must match the email TTE logs in with
-        employee_id: "TTE-001",
+        name: "Albin Thomas",                     // TTE's full name
+        email: "albinthomas807@gmail.com",        // Must match the email TTE logs in with
+        employee_id: "TTE2026002",
         phone: "+919446824103"
     },
     

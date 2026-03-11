@@ -333,11 +333,65 @@ export function SmartRailProvider({ children }) {
                                 verified: p.verified || false,
                                 fare: b.totalFare || 0,
                                 wlNumber: p.wlNumber || null,
-                                racNumber: p.racNumber || null
+                                racNumber: p.racNumber || null,
+                                boarding: b.source || null
                             });
                         });
                     });
                     setPassengers(allPax);
+
+                    // Fetch reviews for this train
+                    try {
+                        const reviewsSnap = await getDocs(query(
+                            collection(db, 'reviews'), 
+                            where('trainNumber', '==', String(tData.train_number)),
+                            orderBy('created_at', 'desc'),
+                            limit(50)
+                        ));
+                        const loadedReviews = reviewsSnap.docs.map(d => {
+                            const data = d.data();
+                            return {
+                                id: d.id,
+                                passenger: data.passenger_name || data.passengerName || 'Anonymous',
+                                pnr: data.pnr || '',
+                                coach: data.coach || '',
+                                seat: data.seat || '',
+                                rating: data.rating || 0,
+                                category: data.category || 'General',
+                                comment: data.comment || data.review || '',
+                                helpful: data.helpful || 0,
+                                date: data.created_at ? new Date(data.created_at).toLocaleDateString('en-IN') : ''
+                            };
+                        });
+                        setReviews(loadedReviews);
+                    } catch (e) { console.warn("[useSmartRail] Reviews fetch failed:", e); }
+
+                    // Fetch complaints for this train
+                    try {
+                        const complaintsSnap = await getDocs(query(
+                            collection(db, 'complaints'),
+                            where('train_number', '==', String(tData.train_number)),
+                            orderBy('created_at', 'desc'),
+                            limit(50)
+                        ));
+                        const loadedComplaints = complaintsSnap.docs.map(d => {
+                            const data = d.data();
+                            return {
+                                id: data.complaint_id || `CMP-${d.id.slice(0,6).toUpperCase()}`,
+                                dbId: d.id,
+                                passenger: data.passenger_name || data.passengerName || 'Anonymous',
+                                pnr: data.pnr || '',
+                                coach: data.coach || '',
+                                category: data.category || 'General',
+                                priority: data.priority || 'Medium',
+                                status: data.status === 'open' ? 'Open' : data.status === 'in-progress' ? 'In Progress' : data.status === 'resolved' ? 'Resolved' : data.status || 'Open',
+                                description: data.description || data.complaint || '',
+                                responses: [],
+                                date: data.created_at ? new Date(data.created_at).toLocaleDateString('en-IN') : ''
+                            };
+                        });
+                        setComplaints(loadedComplaints);
+                    } catch (e) { console.warn("[useSmartRail] Complaints fetch failed:", e); }
 
                     setDataSource('firestore');
                 } catch (err) {

@@ -16,12 +16,19 @@ export default function Analytics() {
         { label: 'WL Conversion', value: `${wlConv}%`, bar: wlConv, color: 'bg-amber-400' },
     ];
 
+    // Use real passenger data - age-based categorization
+    const seniorCount = passengers.filter(p => p.age && parseInt(p.age) >= 60).length;
+    const womenCount = passengers.filter(p => p.gender === 'Female' || p.gender === 'F').length;
+    const childCount = passengers.filter(p => p.age && parseInt(p.age) < 12).length;
+    const maleCount = passengers.filter(p => p.gender === 'Male' || p.gender === 'M').length;
+    const otherCount = passengers.length - seniorCount - womenCount - childCount - maleCount + seniorCount; // Avoid double counting seniors
+    
     const categories = [
-        { label: 'Senior Citizens', count: passengers.filter(p => p.flags?.includes('senior')).length, color: 'text-blue-400' },
-        { label: 'Women', count: passengers.filter(p => p.gender === 'Female' || p.gender === 'F').length, color: 'text-pink-400' },
-        { label: 'Medical', count: passengers.filter(p => p.flags?.includes('medical')).length, color: 'text-red-400' },
-        { label: 'Pregnant', count: passengers.filter(p => p.flags?.includes('pregnant')).length, color: 'text-amber-400' },
-        { label: 'Regular', count: passengers.filter(p => (!p.flags || p.flags.length === 0) && p.gender !== 'Female' && p.gender !== 'F').length, color: 'text-[#B3B3B3]' },
+        { label: 'Senior Citizens (60+)', count: seniorCount, color: 'text-blue-400' },
+        { label: 'Women', count: womenCount, color: 'text-pink-400' },
+        { label: 'Children (<12)', count: childCount, color: 'text-amber-400' },
+        { label: 'Men', count: maleCount, color: 'text-cyan-400' },
+        { label: 'Total Passengers', count: passengers.length, color: 'text-[#B3B3B3]' },
     ];
 
     return (
@@ -90,15 +97,15 @@ export default function Analytics() {
 
             {/* Fraud Detection */}
             <div className="bg-[#2B2B2B] rounded-2xl border border-[#D4D4D4]/10 p-6">
-                <h3 className="text-sm font-bold text-[#B3B3B3] uppercase tracking-wider mb-4 flex items-center gap-2"><BarChart3 size={16} /> Fraud Detection Summary</h3>
+                <h3 className="text-sm font-bold text-[#B3B3B3] uppercase tracking-wider mb-4 flex items-center gap-2"><BarChart3 size={16} /> Summary</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-gray-900 rounded-xl p-4 border border-[#D4D4D4]/5">
-                        <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">Blacklisted Found</p>
-                        <p className="text-2xl font-extrabold text-red-400 mt-1">{passengers.filter(p => p.flags?.includes('blacklisted')).length}</p>
+                        <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">Verified Passengers</p>
+                        <p className="text-2xl font-extrabold text-emerald-400 mt-1">{passengers.filter(p => p.verified).length}</p>
                     </div>
                     <div className="bg-gray-900 rounded-xl p-4 border border-[#D4D4D4]/5">
-                        <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">Ticketless Caught</p>
-                        <p className="text-2xl font-extrabold text-amber-400 mt-1">{fines.filter(f => f.reason === 'No ticket' || f.reason?.toLowerCase().includes('ticketless')).length}</p>
+                        <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">Fines Issued</p>
+                        <p className="text-2xl font-extrabold text-amber-400 mt-1">{fines.length}</p>
                     </div>
                     <div className="bg-gray-900 rounded-xl p-4 border border-[#D4D4D4]/5">
                         <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">Total Incidents</p>

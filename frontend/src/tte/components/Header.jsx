@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Menu, Bell, AlertTriangle, UserX, ShieldAlert, X, LogOut, ChevronDown, User, Train, Clock, MapPin, Database } from 'lucide-react';
+import { Menu, Bell, AlertTriangle, UserX, ShieldAlert, X, LogOut, ChevronDown, User, Train, Clock, MapPin, Database, Info } from 'lucide-react';
 import { useSmartRail } from '../hooks/useSmartRail';
+import { db } from '../../utils/firebaseClient';
+import { collection, query, getDocs, orderBy, limit } from 'firebase/firestore';
 
 const pageTitles = {
     '/': 'Dashboard',
@@ -26,6 +28,23 @@ export default function Header({ onMenuClick }) {
     const notifRef = useRef(null);
     const title = pageTitles[pathname] || 'TTE Command Center';
 
+    const [adminNotifs, setAdminNotifs] = useState([]);
+
+    // Fetch admin notifications from Firebase
+    useEffect(() => {
+        async function fetchNotifications() {
+            try {
+                const q = query(collection(db, 'notifications'), orderBy('created_at', 'desc'), limit(10));
+                const snap = await getDocs(q);
+                const notifs = snap.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .filter(n => (n.userId === null || n.userId === undefined) && (n.target === 'all' || n.target === 'ttes'));
+                setAdminNotifs(notifs);
+            } catch (e) { console.warn('Failed to fetch notifications:', e); }
+        }
+        fetchNotifications();
+    }, []);
+
     // Close dropdowns on outside click
     useEffect(() => {
         function handleClickOutside(e) {
@@ -38,9 +57,18 @@ export default function Header({ onMenuClick }) {
 
     const activeIncidents = incidents.filter(i => i.status === 'Active');
     const unverified = allPassengers.filter(p => !p.verified).length;
-    const waitlist = allPassengers.filter(p => p.status === 'Waitlist').length;
+    const waitlist = allPassengers.filter(p => p.status === 'Waitlist' || p.status === 'WL').length;
+
+    const typeIcons = { info: Info, warning: AlertTriangle, alert: ShieldAlert };
+    const typeColors = { info: 'text-blue-500 bg-blue-50', warning: 'text-amber-500 bg-amber-50', alert: 'text-red-500 bg-red-50' };
 
     const notifications = [
+        ...adminNotifs.map(n => ({
+            icon: typeIcons[n.type] || Info,
+            color: typeColors[n.type] || 'text-blue-500 bg-blue-50',
+            text: n.title || n.message,
+            time: n.created_at ? new Date(n.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Now'
+        })),
         ...activeIncidents.map(i => ({ icon: ShieldAlert, color: 'text-red-500 bg-red-50', text: `${i.type}: ${i.description}`, time: i.time })),
         ...(unverified > 0 ? [{ icon: UserX, color: 'text-amber-500 bg-amber-50', text: `${unverified} passengers not yet verified`, time: 'Now' }] : []),
         ...(waitlist > 0 ? [{ icon: AlertTriangle, color: 'text-orange-500 bg-orange-50', text: `${waitlist} passengers on waitlist`, time: 'Now' }] : []),
