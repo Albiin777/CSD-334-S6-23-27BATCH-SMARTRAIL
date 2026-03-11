@@ -13,9 +13,10 @@ export default function Dashboard() {
     const booked = stats?.booked || 0;
     const occPct = totalSeats > 0 ? Math.round((booked / totalSeats) * 100) : 0;
     
-    // Safely get coach config with fallback
-    const currentCoachType = coaches.find(c => c.id === selectedCoach)?.type;
-    const coachCfg = coachConfigs?.[currentCoachType] || { label: 'Unknown', berths: 0 };
+    // Safely get coach config with fallback - match useSmartRail.jsx behavior
+    const currentCoachObj = coaches.find(c => c.id === selectedCoach);
+    const currentCoachType = currentCoachObj?.type || 'SL';
+    const coachCfg = coachConfigs?.[currentCoachType] || { label: 'Sleeper', berths: 72, color: '#eab308' };
 
     const infoList = [
         ['TTE Name', tteInfo?.name || '—'], 
@@ -70,7 +71,10 @@ export default function Dashboard() {
                             <button onClick={() => setShowCoachPicker(!showCoachPicker)}
                                 className="w-full flex items-center gap-2 px-4 py-3 bg-gray-900 rounded-xl border border-[#D4D4D4]/10 text-white text-sm font-semibold hover:border-[#D4D4D4]/30 transition">
                                 <span className="w-3 h-3 rounded-full" style={{ background: coachCfg?.color || '#fff' }} />
-                                <span className="flex-1 text-left">{coaches.find(c => c.id === selectedCoach)?.label}</span>
+                                <span className="flex-1 text-left">
+                                    {currentCoachObj?.label || '—'} 
+                                    <span className="text-[#9CA3AF] ml-1 text-xs">({coachCfg?.label})</span>
+                                </span>
                                 <span className="text-[10px] text-[#9CA3AF] bg-black/30 px-2 py-0.5 rounded-full">{coachCfg?.berths} berths</span>
                                 <ChevronDown size={16} className={`text-[#B3B3B3] transition-transform ${showCoachPicker ? 'rotate-180' : ''}`} />
                             </button>
@@ -82,7 +86,8 @@ export default function Dashboard() {
                                             <button key={c.id} onClick={() => { setSelectedCoach(c.id); setShowCoachPicker(false); }}
                                                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-white/5 transition ${selectedCoach === c.id ? 'bg-white/10 text-white' : 'text-[#B3B3B3]'}`}>
                                                 <span className="w-2.5 h-2.5 rounded-full" style={{ background: cfg?.color || '#6B7280' }} />
-                                                <span className="font-semibold flex-1">{c.label}</span>
+                                                <span className="font-semibold">{c.label}</span>
+                                                <span className="text-[10px] text-[#6B7280] flex-1">{cfg?.label}</span>
                                                 {cfg && <span className="text-[10px] text-[#6B7280]">{cfg.berths}</span>}
                                             </button>
                                         );
@@ -139,9 +144,14 @@ export default function Dashboard() {
 
                 return (
                     <div className="bg-[#2B2B2B] rounded-2xl border border-[#D4D4D4]/10 p-6">
-                        <h3 className="text-sm font-bold text-[#B3B3B3] uppercase tracking-wider mb-4">
-                            Coach {selectedCoach} — Seat Layout
-                        </h3>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-sm font-bold text-[#B3B3B3] uppercase tracking-wider">
+                                Coach {selectedCoach} — Seat Layout
+                            </h3>
+                            <span className="text-xs px-2 py-1 rounded-lg" style={{ background: `${coachCfg?.color}20`, color: coachCfg?.color }}>
+                                {coachCfg?.label} • {coachCfg?.berths} berths
+                            </span>
+                        </div>
 
                         {/* Column headers */}
                         {!isChair && (

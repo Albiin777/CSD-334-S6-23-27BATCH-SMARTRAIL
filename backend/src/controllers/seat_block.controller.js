@@ -3,7 +3,7 @@ import bookingService from '../services/booking.service.js';
 
 const blockSeat = async (req, res) => {
     try {
-        const { trainNumber, journeyDate, seatId } = req.body;
+        const { trainNumber, journeyDate, seatId, source, destination } = req.body;
         const userId = req.user?.id || null;
 
         if (!trainNumber || !journeyDate || !seatId) {
@@ -13,8 +13,8 @@ const blockSeat = async (req, res) => {
         const blockId = `${trainNumber}_${journeyDate}_${seatId}`;
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-        // 1. Check if already confirmed booked
-        const bookedSeats = await bookingService.getBookedSeatsList(trainNumber, journeyDate);
+        // 1. Check if already confirmed booked (with segment filtering)
+        const bookedSeats = await bookingService.getBookedSeatsList(trainNumber, journeyDate, source, destination);
         if (bookedSeats.includes(seatId)) {
              return res.status(409).json({ error: "This seat is already booked." });
         }
@@ -26,9 +26,13 @@ const blockSeat = async (req, res) => {
             if (blockDoc.exists) {
                 const data = blockDoc.data();
                 const now = new Date().toISOString();
-                // If there's an active block by someone else
-                if (data.expires_at > now && data.user_id !== userId) {
-                    throw new Error("Seat is already held by another user");
+                // If there's an active block
+                if (data.expires_at > now) {
+                    // Prevent override only if held by a different LOGGED-IN user
+                    // Guest blocks (null user_id) can be overridden for better UX
+                    if (data.user_id !== null && data.user_id !== userId) {
+                        throw new Error("Seat is already held by another user");
+                    }
                 }
             }
 

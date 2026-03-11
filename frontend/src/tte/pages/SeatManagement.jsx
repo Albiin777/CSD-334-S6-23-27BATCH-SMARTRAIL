@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSmartRail } from '../hooks/useSmartRail';
 import { User, X, Info, ChevronDown, CheckCircle } from 'lucide-react';
 
@@ -109,6 +110,7 @@ export default function SeatManagement() {
     const { seats, coaches, selectedCoach, setSelectedCoach, currentCoachType, currentConfig, coachConfigs } = useSmartRail();
     const [selected, setSelected] = useState(null);
     const [showCoachList, setShowCoachList] = useState(false);
+    const navigate = useNavigate();
 
     const legend = [
         { label: 'Available', color: 'bg-emerald-500/40' }, { label: 'Booked', color: 'bg-red-500' },
@@ -269,7 +271,23 @@ export default function SeatManagement() {
                                         )}
                                     </div>
                                 ) : (
-                                    <p className="text-sm text-[#9CA3AF] text-center py-4">No passenger assigned</p>
+                                    <div className="flex flex-col items-center justify-center py-6 text-center space-y-4">
+                                        <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                                            <User size={24} />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-bold text-white mb-1">Unoccupied Seat</p>
+                                            <p className="text-xs text-[#9CA3AF]">This seat is currently empty.</p>
+                                        </div>
+                                        <button 
+                                            onClick={() => {
+                                                navigate(`/tte/issue-ticket?coach=${selectedCoach}&seat=${selected.number}&type=${coachCfg?.type || ''}`);
+                                            }}
+                                            className="w-full bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <CheckCircle size={14} /> Book This Seat
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         ) : (

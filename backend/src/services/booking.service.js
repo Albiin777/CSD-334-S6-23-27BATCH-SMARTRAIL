@@ -367,29 +367,30 @@ const processPromotions = async (trainNumber, journeyDate, classCode, freedSeats
         p.racNumber = rac;
     };
 
-    // SINGLE SEAT CANCELLATION LOGIC
-    if (freedSeats.length === 1) {
-        const freedSeat = freedSeats[0];
+    // NEW LOGIC: 50% of cancelled tickets go to waiting list passengers (CNF)
+    // Remaining 50% tickets get shared to each seat for 2 passengers (RAC)
+    const totalFreed = freedSeats.length;
+    const cnfPromoCount = Math.ceil(totalFreed / 2);
+    const racPromoCount = totalFreed - cnfPromoCount;
+
+    // 1. Give 50% to WL passengers (becomes CNF)
+    for (let i = 0; i < cnfPromoCount; i++) {
+        if (wlQueue.length === 0 || freedSeats.length === 0) break;
+        const p = wlQueue.shift();
+        const seat = freedSeats.shift();
+        applyPromo(p, 'CNF', seat, null, null);
+    }
+
+    // 2. Share remaining 50% tickets to 2 RAC passengers each
+    for (let i = 0; i < racPromoCount; i++) {
+        if (wlQueue.length === 0 || freedSeats.length === 0) break;
+        const seat = freedSeats.shift();
+        
         const p1 = wlQueue.shift();
-        if (p1) applyPromo(p1, 'RAC', `${freedSeat}-RAC-Share`, null, 0);
+        if (p1) applyPromo(p1, 'RAC', `${seat}-RAC`, null, null);
 
         const p2 = wlQueue.shift();
-        if (p2) applyPromo(p2, 'RAC', `${freedSeat}-RAC-Share`, null, 0);
-    } else {
-        const halfCount = Math.ceil(Math.min(wlQueue.length, freedSeats.length * 2) / 2);
-        for (let i = 0; i < halfCount; i++) {
-            if (wlQueue.length === 0 || freedSeats.length === 0) break;
-            const p = wlQueue.shift();
-            const seat = freedSeats.shift();
-            applyPromo(p, 'CNF', seat, null, null);
-        }
-        while (wlQueue.length > 0 && freedSeats.length > 0) {
-            const seat = freedSeats.shift();
-            const p1 = wlQueue.shift();
-            if (p1) applyPromo(p1, 'RAC', `${seat}-RAC-Share`, null, 0);
-            const p2 = wlQueue.shift();
-            if (p2) applyPromo(p2, 'RAC', `${seat}-RAC-Share`, null, 0);
-        }
+        if (p2) applyPromo(p2, 'RAC', `${seat}-RAC`, null, null);
     }
 
     // Apply grouped updates

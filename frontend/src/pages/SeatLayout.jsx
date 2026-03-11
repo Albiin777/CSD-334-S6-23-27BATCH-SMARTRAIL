@@ -265,7 +265,7 @@ export default function SeatLayout() {
                 // Optimistically update UI
                 setSelectedSeats(selectedSeats.filter(s => s.uid !== seatId));
                 // Call backend to unblock
-                await api.unblockSeat({ trainNumber, journeyDate, seatId });
+                await api.unblockSeat({ trainNumber, journeyDate, seatId, source, destination });
             } catch (err) {
                 console.error("Failed to unblock seat", err);
             }
@@ -273,7 +273,7 @@ export default function SeatLayout() {
             if (selectedSeats.length >= passengerCount) return;
             try {
                 // Call backend to block FIRST
-                await api.blockSeat({ trainNumber, journeyDate, seatId });
+                await api.blockSeat({ trainNumber, journeyDate, seatId, source, destination });
                 // If successful, update UI
                 setSelectedSeats([...selectedSeats, {
                     uid: seatId,

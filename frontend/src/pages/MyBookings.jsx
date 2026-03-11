@@ -4,6 +4,7 @@ import { auth } from '../utils/firebaseClient';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Train, Calendar, MapPin, Search, ArrowRight, Loader2, Ticket, ShieldCheck, Home } from 'lucide-react';
 import { API_BASE_URL } from '../api/config';
+import api from '../api/train.api';
 import QRCode from "react-qr-code";
 
 export default function MyBookings() {
@@ -58,7 +59,20 @@ export default function MyBookings() {
         };
     }, []);
 
-    if (isLoading) {
+    const handleCancel = async (pnr) => {
+        if (!window.confirm(`Are you sure you want to cancel the ticket with PNR ${pnr}?`)) return;
+        setIsLoading(true);
+        try {
+            await api.cancelBooking(pnr);
+            setBookings(prev => prev.map(b => b.pnr === pnr ? { ...b, passengers: b.passengers.map(p => ({ ...p, status: 'Cancelled' })) } : b));
+        } catch (err) {
+            setError(err.message || 'Failed to cancel booking');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    if (isLoading && bookings.length === 0) {
         return (
             <div className="min-h-screen pt-32 pb-20 px-4 bg-gray-900 text-white font-sans flex flex-col items-center justify-center">
                 <Loader2 className="w-10 h-10 text-gray-600 animate-spin mb-4" />
@@ -200,12 +214,22 @@ export default function MyBookings() {
                                             </div>
                                         </div>
                                         
-                                        <button 
-                                            onClick={() => navigate(`/?pnr=${booking.pnr}#pnr-section`)}
-                                            className="w-full sm:w-auto px-6 py-2.5 bg-white text-black hover:bg-gray-200 text-xs font-bold uppercase rounded-lg transition active:scale-95 flex items-center justify-center gap-2"
-                                        >
-                                            Track PNR
-                                        </button>
+                                        <div className="flex gap-2 w-full sm:w-auto mt-4 sm:mt-0">
+                                            {booking.passengers && booking.passengers[0] && booking.passengers[0].status !== 'Cancelled' && (
+                                                <button 
+                                                    onClick={() => handleCancel(booking.pnr)}
+                                                    className="flex-1 sm:w-auto px-4 py-2.5 border border-red-500/50 text-red-500 hover:bg-red-500/10 text-xs font-bold uppercase rounded-lg transition active:scale-95 flex items-center justify-center"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            )}
+                                            <button 
+                                                onClick={() => navigate(`/?pnr=${booking.pnr}#pnr-section`)}
+                                                className="flex-1 sm:w-auto px-6 py-2.5 bg-white text-black hover:bg-gray-200 text-xs font-bold uppercase rounded-lg transition active:scale-95 flex items-center justify-center gap-2"
+                                            >
+                                                Track PNR
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
