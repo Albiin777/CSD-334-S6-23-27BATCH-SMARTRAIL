@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { auth, db } from '../../utils/firebaseClient';
+import { auth, db, storage } from '../../utils/firebaseClient';
 import { onAuthStateChanged } from 'firebase/auth';
 import api from '../../api/train.api';
 import { 
@@ -13,8 +13,10 @@ import {
     getDoc, 
     updateDoc, 
     addDoc, 
-    serverTimestamp 
+    serverTimestamp,
+    onSnapshot 
 } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const SmartRailContext = createContext(null);
 
@@ -431,6 +433,35 @@ export function SmartRailProvider({ children }) {
                         setComplaints(loadedComplaints);
                     } catch (e) { console.warn("[useSmartRail] Complaints fetch failed:", e); }
 
+                    // Fetch incidents for this train
+                    try {
+                        const incidentsSnap = await getDocs(query(
+                            collection(db, 'incidents'),
+                            where('train_number', '==', String(tData.train_number)),
+                            orderBy('created_at', 'desc'),
+                            limit(50)
+                        ));
+                        const loadedIncidents = incidentsSnap.docs.map(d => {
+                            const data = d.data();
+                            return {
+                                id: d.id,
+                                type: data.type || 'General',
+                                description: data.description || '',
+                                coach: data.coach || '',
+                                reporter: data.reporter || 'TTE',
+                                status: data.status || 'Active',
+                                photo: data.photo_url || null,
+                                time: data.created_at?.toDate ? 
+                                    data.created_at.toDate().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) :
+                                    new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                                date: data.created_at?.toDate ? 
+                                    data.created_at.toDate().toLocaleDateString('en-IN') : 
+                                    new Date().toLocaleDateString('en-IN')
+                            };
+                        });
+                        setIncidents(loadedIncidents);
+                    } catch (e) { console.warn("[useSmartRail] Incidents fetch failed:", e); }
+
                     setDataSource('firestore');
                 } catch (err) {
                     console.error('Loader error:', err);
@@ -551,6 +582,68 @@ export function SmartRailProvider({ children }) {
         dataSource
     };
 
+    // Add incident to Firebase with optional photo upload
+    const addIncident = useCallback(async (incident) => {
+        try {
+            let photoUrl = null;
+            
+            // Upload photo to Firebase Storage if provided (base64 data URL)
+            if (incident.photo && incident.photo.startsWith('data:')) {
+                const timestamp = Date.now();
+                const trainNo = trainDetails?.train_number || 'unknown';
+                const fileName = `incidents/${trainNo}/${timestamp}.jpg`;
+                const storageRef = ref(storage, fileName);
+                
+                // Convert base64 to blob
+                const response = await fetch(incident.photo);
+                const blob = await response.blob();
+                
+                // Upload to Firebase Storage
+                await uploadBytes(storageRef, blob);
+                photoUrl = await getDownloadURL(storageRef);
+            }
+            
+            // Create incident document in Firestore
+            const incidentDoc = {
+                type: incident.type,
+                description: incident.description,
+                coach: incident.coach || safeCoach,
+                reporter: incident.reporter || tteInfo.name,
+                reporter_id: tteDetails?.id || 'TTE',
+                train_number: trainDetails?.train_number || '',
+                train_name: trainDetails?.train_name || tteDetails?.trainName || '',
+                photo_url: photoUrl,
+                status: 'Active',
+                created_at: serverTimestamp(),
+                updated_at: serverTimestamp()
+            };
+            
+            const docRef = await addDoc(collection(db, 'incidents'), incidentDoc);
+            
+            // Update local state
+            const newIncident = {
+                id: docRef.id,
+                type: incident.type,
+                description: incident.description,
+                coach: incident.coach || safeCoach,
+                reporter: incident.reporter || 'TTE',
+                status: 'Active',
+                photo: photoUrl,
+                time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                date: new Date().toLocaleDateString('en-IN')
+            };
+            
+            setIncidents(prev => [newIncident, ...prev]);
+            addLog(`Incident reported: ${incident.type}`, 'incident');
+            
+            return { success: true, id: docRef.id };
+        } catch (error) {
+            console.error('[useSmartRail] Failed to add incident:', error);
+            addLog(`Failed to report incident: ${error.message}`, 'error');
+            return { success: false, error: error.message };
+        }
+    }, [trainDetails, tteDetails, safeCoach, tteInfo.name, addLog]);
+
     const value = {
         time, passengers: coachPassengers, allPassengers: passengers, coaches, incidents, fines, reviews, complaints,
         selectedCoach, setSelectedCoach, tteInfo, stats, seats, dataSource, loading, error,
@@ -561,7 +654,7 @@ export function SmartRailProvider({ children }) {
         currentStation: stations[stationIndex] || stations[0],
         setFines, setIncidents, setComplaints,
         addFine: (fine) => { setFines(prev => [...prev, { ...fine, id: Date.now() }]); addLog(`Fine issued: ₹${fine.amount}`, 'fine'); },
-        addIncident: (incident) => { setIncidents(prev => [...prev, { ...incident, id: Date.now() }]); addLog(`Incident: ${incident.title}`, 'incident'); }
+        addIncident
     };
 
     return <SmartRailContext.Provider value={value}>{children}</SmartRailContext.Provider>;
