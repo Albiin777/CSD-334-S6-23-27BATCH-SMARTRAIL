@@ -1,25 +1,48 @@
 import StatCard from '../components/StatCard';
 import { useSmartRail } from '../hooks/useSmartRail';
-import { Users, CheckCircle, Clock, XCircle, ListOrdered, Banknote, Activity, ChevronRight, Navigation, ChevronDown, Train } from 'lucide-react';
+import { Users, CheckCircle, Clock, XCircle, ListOrdered, Banknote, Activity, ChevronRight, Navigation, ChevronDown, Train, ArrowUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
 
 export default function Dashboard() {
     const navigate = useNavigate();
-    const { stats, tteInfo, logs, time, stations, stationIndex, nextStation, coaches, coachConfigs, selectedCoach, setSelectedCoach, seats } = useSmartRail();
+    const { stats, tteInfo, logs, time, stations, stationIndex, nextStation, coaches, coachConfigs, selectedCoach, setSelectedCoach, seats, currentCoachType, currentConfig, loading, error } = useSmartRail();
     const [showCoachPicker, setShowCoachPicker] = useState(false);
     const totalSeats = stats?.totalSeats || 0;
     const booked = stats?.booked || 0;
     const occPct = totalSeats > 0 ? Math.round((booked / totalSeats) * 100) : 0;
     
-    // Safely get coach config with fallback - uses real totalSeats from stats
+    // Use currentCoachType and currentConfig from hook instead of recalculating
     const currentCoachObj = coaches.find(c => c.id === selectedCoach);
-    const currentCoachType = currentCoachObj?.type || 'SL';
     const coachCfg = {
-        ...(coachConfigs?.[currentCoachType] || { label: 'Sleeper', color: '#eab308' }),
+        ...(currentConfig || coachConfigs?.[currentCoachType] || { label: 'Unknown', color: '#6B7280' }),
         berths: totalSeats // Use real seat count from backend
     };
+    
+    console.log("[Dashboard] selectedCoach:", selectedCoach, "currentCoachType:", currentCoachType, "seats:", seats?.length, "coaches:", coaches?.length, "loading:", loading, "error:", error);
+
+    // Show loading state
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-64 text-gray-400">
+                <div className="text-center">
+                    <div className="w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <p>Loading dashboard data...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Show error state
+    if (error) {
+        return (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center">
+                <p className="text-red-400 font-semibold">Error loading data</p>
+                <p className="text-sm text-gray-400 mt-2">{error}</p>
+            </div>
+        );
+    }
 
     const infoList = [
         ['TTE Name', tteInfo?.name || '—'], 
@@ -129,134 +152,203 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* Seat Heatmap — Real Coach Layout */}
+            {/* Seat Heatmap — Bay Layout */}
             {(() => {
-                const isChair = coachCfg?.isChair;
-                const berthsPerBay = coachCfg?.berthsPerBay || 8;
-                const hasSide = coachCfg?.hasSide ?? true;
-                // Split seats into bays
-                const bays = [];
-                for (let i = 0; i < seats.length; i += berthsPerBay) {
-                    bays.push(seats.slice(i, i + berthsPerBay));
-                }
-                const statusColor = (s) =>
-                    s === 'booked' ? 'bg-red-500 border-red-600 text-white'
-                    : s === 'rac' ? 'bg-amber-500 border-amber-600 text-black'
-                    : s === 'waitlist' ? 'bg-orange-500 border-orange-600 text-black'
-                    : 'bg-emerald-500/30 border-emerald-500/50 text-emerald-300';
+                // Build layout based on coach type from actual seat data - organized by bays
+                const buildLayout = () => {
+                    if (!seats.length) return { bays: [], type: 'unknown' };
+                    
+                    const firstBerth = seats[0]?.typeShort;
+                    const hasSideBerths = seats.some(s => ['SL', 'SU'].includes(s.typeShort));
+                    const isChairCar = ['WS', 'MS', 'AS', 'W', 'M', 'A'].includes(firstBerth);
+                    
+                    if (hasSideBerths) {
+                        // Sleeper - 8 berths per bay
+                        const bays = [];
+                        for (let i = 0; i < seats.length; i += 8) {
+                            const baySeats = seats.slice(i, i + 8);
+                            const bayNumber = Math.floor(i / 8) + 1;
+                            bays.push({
+                                bayNumber,
+                                total: 8,
+                                left: [baySeats[0], baySeats[1], baySeats[2]],
+                                leftSide: [baySeats[3]],
+                                right: [baySeats[4], baySeats[5], baySeats[6]],
+                                rightSide: [baySeats[7]]
+                            });
+                        }
+                        return { bays, type: 'sleeper' };
+                    } else if (isChairCar) {
+                        // 2S/CC - 5-6 seats per row
+                        const seatsPerRow = seats.length % 6 === 0 ? 6 : 5;
+                        const leftCount = seatsPerRow === 6 ? 3 : 2;
+                        
+                        const bays = [];
+                        for (let i = 0; i < seats.length; i += seatsPerRow) {
+                            const rowSeats = seats.slice(i, i + seatsPerRow);
+                            const rowNumber = Math.floor(i / seatsPerRow) + 1;
+                            bays.push({
+                                bayNumber: rowNumber,
+                                total: seatsPerRow,
+                                left: rowSeats.slice(0, leftCount),
+                                right: rowSeats.slice(leftCount),
+                                leftSide: [],
+                                rightSide: []
+                            });
+                        }
+                        return { bays, type: 'chair' };
+                    }
+                    
+                    // Fallback
+                    const bays = [];
+                    for (let i = 0; i < seats.length; i += 6) {
+                        const rowSeats = seats.slice(i, i + 6);
+                        const rowNumber = Math.floor(i / 6) + 1;
+                        bays.push({
+                            bayNumber: rowNumber,
+                            total: 6,
+                            left: rowSeats.slice(0, 3),
+                            right: rowSeats.slice(3),
+                            leftSide: [],
+                            rightSide: []
+                        });
+                    }
+                    return { bays, type: 'generic' };
+                };
+
+                const layout = buildLayout();
+                
+                const statusStyles = {
+                    booked: { bg: 'bg-red-500', border: 'border-red-400', text: 'text-white' },
+                    available: { bg: 'bg-gray-800', border: 'border-gray-600', text: 'text-gray-400' },
+                    rac: { bg: 'bg-amber-500', border: 'border-amber-400', text: 'text-white' },
+                    waitlist: { bg: 'bg-orange-500', border: 'border-orange-400', text: 'text-white' },
+                };
+
+                const SeatCell = ({ seat }) => {
+                    if (!seat) return <div className="w-10 h-10 md:w-11 md:h-11" />;
+                    const style = statusStyles[seat.status] || statusStyles.available;
+                    return (
+                        <div
+                            title={`${seat.number} - ${seat.typeShort} (${seat.status})`}
+                            className={`w-10 h-10 md:w-11 md:h-11 rounded-lg flex flex-col items-center justify-center
+                                ${style.bg} ${style.text} border ${style.border}`}
+                        >
+                            <span className="text-sm font-bold">{seat.number}</span>
+                            <span className="text-[8px] opacity-75">{seat.typeShort}</span>
+                        </div>
+                    );
+                };
 
                 return (
-                    <div className="bg-[#2B2B2B] rounded-2xl border border-[#D4D4D4]/10 p-6">
-                        <div className="flex items-center justify-between mb-4">
+                    <div className="bg-[#1D2332] rounded-2xl border border-white/5 p-6 shadow-2xl relative">
+                        {/* Engine Direction */}
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-gray-700 text-gray-300 px-4 py-1 rounded-b-lg text-[10px] font-bold uppercase tracking-widest flex items-center gap-1">
+                            <ArrowUp size={10} /> Engine
+                        </div>
+
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-4 mt-4">
                             <h3 className="text-sm font-bold text-[#B3B3B3] uppercase tracking-wider">
-                                Coach {selectedCoach} — Seat Layout
+                                Coach {selectedCoach}
                             </h3>
-                            <span className="text-xs px-2 py-1 rounded-lg" style={{ background: `${coachCfg?.color}20`, color: coachCfg?.color }}>
-                                {coachCfg?.label} • {coachCfg?.berths} berths
+                            <span className="text-xs px-2 py-1 rounded-lg font-semibold" style={{ background: `${coachCfg?.color}20`, color: coachCfg?.color }}>
+                                {coachCfg?.label} • {seats.length} {layout.type === 'chair' ? 'seats' : 'berths'}
                             </span>
                         </div>
 
-                        {/* Column headers */}
-                        {!isChair && (
-                            <div className="flex gap-1 mb-2">
-                                <div className="w-8 shrink-0" />
-                                <div className="flex-1 grid grid-cols-3 gap-1 text-[9px] font-bold text-[#6B7280] text-center uppercase tracking-wider">
-                                    <span>Lower</span><span>Middle</span><span>Upper</span>
-                                </div>
-                                {hasSide && (
-                                    <div className="w-1 bg-[#D4D4D4]/10 mx-1 rounded-full" />
-                                )}
-                                {hasSide && (
-                                    <div className="flex gap-1" style={{ width: '4.5rem' }}>
-                                        <span className="flex-1 text-[9px] font-bold text-[#6B7280] text-center uppercase tracking-wider">S.Low</span>
-                                        <span className="flex-1 text-[9px] font-bold text-[#6B7280] text-center uppercase tracking-wider">S.Up</span>
+                        {/* Seat Layout Bays */}
+                        {layout.bays.length > 0 ? (
+                            <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                                {layout.bays.map((bay, bayIdx) => (
+                                    <div key={bayIdx} className="bg-gray-900/50 rounded-lg p-3 border border-gray-800">
+                                        {/* Bay Label */}
+                                        <div className="mb-2 flex items-center justify-between">
+                                            <span className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                                                BAY {bay.bayNumber}
+                                            </span>
+                                            <span className="text-[9px] text-gray-700">{bay.total} seats</span>
+                                        </div>
+
+                                        {/* Seats Layout */}
+                                        {layout.type === 'sleeper' ? (
+                                            // Sleeper: Vertical stacking showing Upper/Middle/Lower
+                                            <div className="flex items-stretch gap-2">
+                                                {/* Left column (Upper, Middle, Lower) */}
+                                                <div className="flex flex-col gap-1">
+                                                    <SeatCell seat={bay.left[2]} />
+                                                    <SeatCell seat={bay.left[1]} />
+                                                    <SeatCell seat={bay.left[0]} />
+                                                </div>
+
+                                                {/* Left side berth */}
+                                                {bay.leftSide.length > 0 && (
+                                                    <div className="border-l border-dashed border-gray-700 pl-1 flex flex-col gap-1">
+                                                        <SeatCell seat={bay.leftSide[0]} />
+                                                    </div>
+                                                )}
+
+                                                {/* Aisle */}
+                                                <div className="w-2 flex-shrink-0">
+                                                    <div className="w-0.5 h-14 bg-gray-700 mx-auto rounded-full opacity-50"></div>
+                                                </div>
+
+                                                {/* Right column (Upper, Middle, Lower) */}
+                                                <div className="flex flex-col gap-1">
+                                                    <SeatCell seat={bay.right[2]} />
+                                                    <SeatCell seat={bay.right[1]} />
+                                                    <SeatCell seat={bay.right[0]} />
+                                                </div>
+
+                                                {/* Right side berth */}
+                                                {bay.rightSide.length > 0 && (
+                                                    <div className="border-l border-dashed border-gray-700 pl-1 flex flex-col gap-1">
+                                                        <SeatCell seat={bay.rightSide[0]} />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            // Non-sleeper: Horizontal layout
+                                            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                                                {/* Left side */}
+                                                <div className="flex gap-1">
+                                                    {bay.left.map((seat, i) => (
+                                                        <div key={`l-${i}`}>
+                                                            <SeatCell seat={seat} />
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                {/* Aisle */}
+                                                <div className="w-3 flex-shrink-0">
+                                                    <div className="w-0.5 h-8 bg-gray-700 mx-auto rounded-full opacity-50"></div>
+                                                </div>
+
+                                                {/* Right side */}
+                                                <div className="flex gap-1">
+                                                    {bay.right.map((seat, i) => (
+                                                        <div key={`r-${i}`}>
+                                                            <SeatCell seat={seat} />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                )}
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-center h-32 text-gray-500">
+                                <p className="text-sm">No seat data available</p>
                             </div>
                         )}
 
-                        {/* Coach bays */}
-                        <div className="overflow-x-auto">
-                            <div className={`flex ${isChair ? 'flex-col gap-1' : 'flex-col gap-1'}`}>
-                                {bays.map((bay, bi) => {
-                                    if (isChair) {
-                                        return (
-                                            <div key={bi} className="flex items-center gap-1">
-                                                <span className="text-[9px] font-bold text-[#6B7280] w-8 shrink-0 text-right pr-1">
-                                                    {bi + 1}
-                                                </span>
-                                                <div className="flex gap-1 flex-1">
-                                                    {bay.map((seat) => (
-                                                        <div
-                                                            key={seat.number}
-                                                            title={`Seat ${seat.number} (${seat.typeShort}) — ${seat.status}`}
-                                                            className={`flex-1 h-7 rounded border text-[8px] font-bold flex flex-col items-center justify-center cursor-default transition ${statusColor(seat.status)}`}
-                                                        >
-                                                            <span>{seat.number}</span>
-                                                            <span className="opacity-60 text-[7px]">{seat.typeShort}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        );
-                                    }
-
-                                    // Sleeper / AC coach: main berths (LB/MB/UB) + side berths (SL/SU)
-                                    const mainBerths = hasSide ? bay.slice(0, berthsPerBay - 2) : bay;
-                                    const sideBerths = hasSide ? bay.slice(berthsPerBay - 2) : [];
-
-                                    return (
-                                        <div key={bi} className="flex items-center gap-1">
-                                            {/* Bay number */}
-                                            <span className="text-[9px] font-bold text-[#6B7280] w-8 shrink-0 text-right pr-1">
-                                                {bi + 1}
-                                            </span>
-
-                                            {/* Main berths: 2 sets of LB/MB/UB side-by-side */}
-                                            <div className="flex-1 grid gap-1"
-                                                style={{ gridTemplateColumns: `repeat(${mainBerths.length}, minmax(0,1fr))` }}>
-                                                {mainBerths.map((seat) => (
-                                                    <div
-                                                        key={seat.number}
-                                                        title={`Berth ${seat.number} (${seat.typeShort}) — ${seat.status}${seat.passenger ? ` · ${seat.passenger.name}` : ''}`}
-                                                        className={`h-8 rounded border text-[8px] font-bold flex flex-col items-center justify-center cursor-default transition ${statusColor(seat.status)}`}
-                                                    >
-                                                        <span>{seat.number}</span>
-                                                        <span className="opacity-60 text-[7px]">{seat.typeShort}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-
-                                            {/* Aisle divider */}
-                                            {hasSide && <div className="w-px bg-[#D4D4D4]/15 self-stretch mx-0.5" />}
-
-                                            {/* Side berths: SL / SU */}
-                                            {hasSide && (
-                                                <div className="flex gap-1" style={{ width: '4.5rem' }}>
-                                                    {sideBerths.map((seat) => (
-                                                        <div
-                                                            key={seat.number}
-                                                            title={`Berth ${seat.number} (${seat.typeShort}) — ${seat.status}${seat.passenger ? ` · ${seat.passenger.name}` : ''}`}
-                                                            className={`flex-1 h-8 rounded border text-[8px] font-bold flex flex-col items-center justify-center cursor-default transition ${statusColor(seat.status)}`}
-                                                        >
-                                                            <span>{seat.number}</span>
-                                                            <span className="opacity-60 text-[7px]">{seat.typeShort}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
                         {/* Legend */}
-                        <div className="flex gap-4 mt-4 text-[10px] font-semibold text-[#9CA3AF]">
-                            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-emerald-500/30 border border-emerald-500/50 inline-block" /> Available</span>
-                            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-500 border border-red-600 inline-block" /> Booked</span>
-                            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-amber-500 border border-amber-600 inline-block" /> RAC</span>
-                            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-orange-500 border border-orange-600 inline-block" /> Waitlist</span>
+                        <div className="flex gap-4 mt-5 justify-center text-[10px] font-semibold text-[#9CA3AF]">
+                            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-800 border border-gray-600" /> Available</span>
+                            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500" /> Booked</span>
+                            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500" /> RAC</span>
+                            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-500" /> Waitlist</span>
                         </div>
                     </div>
                 );

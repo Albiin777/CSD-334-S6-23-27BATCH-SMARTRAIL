@@ -20,7 +20,8 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const SmartRailContext = createContext(null);
 
-const COACH_CONFIGS = {
+// Initial fallback configs in case backend is unreachable
+const INITIAL_COACH_CONFIGS = {
     '1A': { label: 'First AC', berths: 24, berthsPerBay: 4, bays: 6, bayLabels: ['LB', 'UB', 'LB', 'UB'], hasSide: false, color: '#a855f7' },
     '2A': { label: 'AC 2-Tier', berths: 48, berthsPerBay: 6, bays: 8, bayLabels: ['LB', 'UB', 'LB', 'UB', 'SL', 'SU'], hasSide: true, color: '#3b82f6' },
     '3A': { label: 'AC 3-Tier', berths: 72, berthsPerBay: 8, bays: 9, bayLabels: ['LB', 'MB', 'UB', 'LB', 'MB', 'UB', 'SL', 'SU'], hasSide: true, color: '#22c55e' },
@@ -29,34 +30,81 @@ const COACH_CONFIGS = {
     '2S': { label: '2nd Sitting', berths: 108, berthsPerBay: 6, bays: 18, bayLabels: ['W', 'M', 'A', 'A', 'M', 'W'], hasSide: false, color: '#f97316', isChair: true },
 };
 
-const getBerthLabel = (num, coachType) => {
-    const cfg = COACH_CONFIGS[coachType];
+// Build coach config from API response - uses standard configs for known types
+function buildConfigFromApiCoach(coach) {
+    const seats = coach.seats || [];
+    const totalSeats = coach.totalSeats || seats.length;
+    
+    if (totalSeats === 0) return null;
+    
+    // For known coach types, use standard Indian Railways layout
+    const standardConfigs = {
+        '1A': { berthsPerBay: 4, hasSide: false, isChair: false },  // 2 LB + 2 UB per coupe
+        '2A': { berthsPerBay: 6, hasSide: true, isChair: false },   // 4 main + 2 side
+        '3A': { berthsPerBay: 8, hasSide: true, isChair: false },   // 6 main + 2 side
+        '3E': { berthsPerBay: 8, hasSide: true, isChair: false },   // Same as 3A
+        'SL': { berthsPerBay: 8, hasSide: true, isChair: false },   // 6 main + 2 side
+        'SLR': { berthsPerBay: 8, hasSide: true, isChair: false },  // Same as SL
+        'CC': { berthsPerBay: 5, hasSide: false, isChair: true },   // 2+3 per row (WS,MS,AS,AS,WS or similar)
+        '2S': { berthsPerBay: 6, hasSide: false, isChair: true },   // 3+3 per row
+        'GS': { berthsPerBay: 6, hasSide: false, isChair: true },   // General Seating 3+3 per row
+        'GEN': { berthsPerBay: 0, hasSide: false, isChair: false }, // Unreserved
+    };
+    
+    const stdCfg = standardConfigs[coach.classCode];
+    
+    // Use standard config if available
+    const berthsPerBay = stdCfg?.berthsPerBay || 8;
+    const hasSide = stdCfg?.hasSide ?? seats.some(s => ['SL', 'SU'].includes(s.berthType));
+    const isChair = stdCfg?.isChair ?? seats.some(s => ['WS', 'MS', 'AS', 'W', 'M', 'A'].includes(s.berthType));
+    
+    // Extract bayLabels from first bay
+    const bayLabels = berthsPerBay > 0 ? seats.slice(0, berthsPerBay).map(s => s.berthType) : [];
+    const bays = berthsPerBay > 0 ? Math.ceil(totalSeats / berthsPerBay) : 0;
+    
+    const colorMap = { '1A': '#a855f7', '2A': '#3b82f6', '3A': '#22c55e', 'SL': '#eab308', 'CC': '#06b6d4', '2S': '#f97316', 'GS': '#22c55e', '3E': '#22c55e', 'SLR': '#eab308', 'GEN': '#6B7280' };
+    const labelMap = { '1A': 'First AC', '2A': 'AC 2-Tier', '3A': 'AC 3-Tier', 'SL': 'Sleeper', 'CC': 'AC Chair Car', '2S': '2nd Sitting', 'GS': 'General Seating', '3E': 'AC 3-Economy', 'SLR': 'Sleeper', 'GEN': 'General' };
+    
+    return {
+        label: labelMap[coach.classCode] || coach.classCode,
+        berths: totalSeats,
+        berthsPerBay,
+        bays,
+        bayLabels,
+        hasSide,
+        isChair,
+        color: colorMap[coach.classCode] || '#6B7280'
+    };
+}
+
+const getBerthLabel = (num, coachType, coachConfigs) => {
+    const cfg = coachConfigs?.[coachType] || INITIAL_COACH_CONFIGS[coachType];
     if (!cfg) return '—';
     const pos = ((num - 1) % cfg.berthsPerBay);
     return cfg.bayLabels[pos] || '—';
 };
 
-const getBerthFull = (num, coachType) => {
-    const short = getBerthLabel(num, coachType);
-    const map = { LB: 'Lower Berth', MB: 'Middle Berth', UB: 'Upper Berth', SL: 'Side Lower', SU: 'Side Upper', W: 'Window', M: 'Middle', A: 'Aisle' };
+const getBerthFull = (num, coachType, coachConfigs) => {
+    const short = getBerthLabel(num, coachType, coachConfigs);
+    const map = { LB: 'Lower Berth', MB: 'Middle Berth', UB: 'Upper Berth', SL: 'Side Lower', SU: 'Side Upper', W: 'Window', M: 'Middle', A: 'Aisle', WS: 'Window Seat', MS: 'Middle Seat', AS: 'Aisle Seat' };
     return map[short] || short;
 };
 
-const getBay = (num, coachType) => {
-    const cfg = COACH_CONFIGS[coachType];
+const getBay = (num, coachType, coachConfigs) => {
+    const cfg = coachConfigs?.[coachType] || INITIAL_COACH_CONFIGS[coachType];
     if (!cfg) return 1;
     return Math.ceil(num / cfg.berthsPerBay);
 };
 
-const isSideBerth = (num, coachType) => {
-    const cfg = COACH_CONFIGS[coachType];
+const isSideBerth = (num, coachType, coachConfigs) => {
+    const cfg = coachConfigs?.[coachType] || INITIAL_COACH_CONFIGS[coachType];
     if (!cfg || !cfg.hasSide) return false;
     const pos = ((num - 1) % cfg.berthsPerBay);
     return pos >= (cfg.berthsPerBay - 2);
 };
 
-function buildCoachSeats(coachId, coachType, passengerList, backendBerths) {
-    const cfg = COACH_CONFIGS[coachType];
+function buildCoachSeats(coachId, coachType, passengerList, backendBerths, coachConfigs) {
+    const cfg = coachConfigs?.[coachType] || INITIAL_COACH_CONFIGS[coachType];
     const coachPassengers = passengerList.filter(p => p.coach === coachId);
     const totalSeats = backendBerths?.length || cfg?.berths || 0;
     
@@ -72,11 +120,11 @@ function buildCoachSeats(coachId, coachType, passengerList, backendBerths) {
         // Use backend berth type if available, otherwise calculate from config
         const berthTypeFull = backendBerth
             ? (() => {
-                const map = { LB: 'Lower Berth', MB: 'Middle Berth', UB: 'Upper Berth', SL: 'Side Lower', SU: 'Side Upper', W: 'Window', M: 'Middle', A: 'Aisle', SEAT: 'Seat' };
+                const map = { LB: 'Lower Berth', MB: 'Middle Berth', UB: 'Upper Berth', SL: 'Side Lower', SU: 'Side Upper', W: 'Window', M: 'Middle', A: 'Aisle', WS: 'Window Seat', MS: 'Middle Seat', AS: 'Aisle Seat', SEAT: 'Seat' };
                 return map[backendBerth.berthType] || backendBerth.berthType;
               })()
-            : getBerthFull(num, coachType);
-        const berthTypeShort = backendBerth?.berthType || getBerthLabel(num, coachType);
+            : getBerthFull(num, coachType, coachConfigs);
+        const berthTypeShort = backendBerth?.berthType || getBerthLabel(num, coachType, coachConfigs);
         const bay = Math.ceil(num / (cfg?.berthsPerBay || 8));
 
         let status = 'available';
@@ -100,11 +148,13 @@ export function SmartRailProvider({ children }) {
     const [passengers, setPassengers] = useState([]);
     const [coaches, setCoaches] = useState([]);
     const [stations, setStations] = useState([]); // Will be populated from train schedule API
+    const [stationSchedule, setStationSchedule] = useState([]); // Full schedule with distances
     const [incidents, setIncidents] = useState([]);
     const [fines, setFines] = useState([]);
     const [reviews, setReviews] = useState([]);
     const [complaints, setComplaints] = useState([]);
     const [backendCoachMap, setBackendCoachMap] = useState({});
+    const [coachConfigs, setCoachConfigs] = useState(INITIAL_COACH_CONFIGS);
     const [dataSource, setDataSource] = useState('loading');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -138,6 +188,34 @@ export function SmartRailProvider({ children }) {
 
             async function loadFromFirestore() {
                 try {
+                    // Fetch coach types config first
+                    try {
+                        const typesRes = await api.getCoachTypes();
+                        if (typesRes && typesRes.length > 0) {
+                            const newConfigs = { ...INITIAL_COACH_CONFIGS };
+                            typesRes.forEach(ct => {
+                                // Extract bay information if possible
+                                const rowStructure = ct.layout?.rowStructure || [];
+                                const berthsPerBay = rowStructure.length > 0 ? rowStructure[0].filter(b => b !== 'AISLE').length : 8;
+                                const bayLabels = rowStructure.flat().filter(b => b !== 'AISLE');
+                                
+                                newConfigs[ct.classCode] = {
+                                    label: ct.description,
+                                    berths: ct.totalSeats,
+                                    berthsPerBay,
+                                    bays: Math.ceil(ct.totalSeats / berthsPerBay),
+                                    bayLabels,
+                                    hasSide: rowStructure.some(row => row.includes('SL') || row.includes('SU')),
+                                    color: INITIAL_COACH_CONFIGS[ct.classCode]?.color || '#6B7280',
+                                    layout: ct.layout
+                                };
+                            });
+                            setCoachConfigs(newConfigs);
+                        }
+                    } catch (e) {
+                         console.warn("[useSmartRail] Failed to load coach types config:", e);
+                    }
+
                     let profileName = null;
                     let tteEmail = currentUser?.email || localStorage.getItem('tteEmail');
 
@@ -166,40 +244,74 @@ export function SmartRailProvider({ children }) {
                     let assignedTrainNumber = null;
                     let assignedCoachId = null;
                     let assignmentData = null;
+                    let tteEmployeeId = null;
+
+                    // Fetch TTE employee_id from ttes collection
+                    if (tteEmail) {
+                        try {
+                            const tteQ = query(collection(db, 'ttes'), where('email', '==', tteEmail.toLowerCase()), limit(1));
+                            const tteSnap = await getDocs(tteQ);
+                            if (!tteSnap.empty) {
+                                tteEmployeeId = tteSnap.docs[0].data().employee_id;
+                                console.log("[useSmartRail] Found TTE employee_id:", tteEmployeeId);
+                            }
+                        } catch (e) {
+                            console.warn("[useSmartRail] TTE collection query failed:", e);
+                        }
+                    }
 
                     if (tteEmail) {
                         console.log("[useSmartRail] Looking for TTE assignment with email:", tteEmail);
-                        const q = query(collection(db, 'tte_assignments'), where('tte_email', '==', tteEmail), where('status', '==', 'active'), limit(1));
-                        const qSnap = await getDocs(q);
-                        console.log("[useSmartRail] TTE assignment query result:", qSnap.size, "docs");
-                        if (!qSnap.empty) {
-                            assignmentData = qSnap.docs[0].data();
-                            console.log("[useSmartRail] Assignment data:", assignmentData);
-                            assignedTrainNumber = assignmentData.train_no;
-                            assignedCoachId = assignmentData.coach_ids?.[0];
+                        try {
+                            const q = query(collection(db, 'tte_assignments'), where('tte_email', '==', tteEmail), where('status', '==', 'active'), limit(1));
+                            const qSnap = await getDocs(q);
+                            console.log("[useSmartRail] TTE assignment query result:", qSnap.size, "docs");
                             
-                            const finalDisplayName = profileName || currentUser?.displayName || assignmentData.tte_name || 'TTE';
+                            if (qSnap.empty) {
+                                // Try without status filter as fallback
+                                console.log("[useSmartRail] No active assignment found, trying without status filter...");
+                                const qNoStatus = query(collection(db, 'tte_assignments'), where('tte_email', '==', tteEmail), limit(1));
+                                const qNoStatusSnap = await getDocs(qNoStatus);
+                                console.log("[useSmartRail] Assignment query (no status filter):", qNoStatusSnap.size, "docs");
+                                
+                                if (!qNoStatusSnap.empty) {
+                                    assignmentData = qNoStatusSnap.docs[0].data();
+                                    console.log("[useSmartRail] Found assignment (status:", assignmentData.status, "):", assignmentData);
+                                }
+                            } else {
+                                assignmentData = qSnap.docs[0].data();
+                                console.log("[useSmartRail] Assignment data:", assignmentData);
+                            }
+                            
+                            if (assignmentData) {
+                                assignedTrainNumber = assignmentData.train_no;
+                                assignedCoachId = assignmentData.coach_ids?.[0];
+                                
+                                const finalDisplayName = profileName || currentUser?.displayName || assignmentData.tte_name || 'TTE';
 
-                            setTteDetails({
-                                name: finalDisplayName,
-                                id: assignmentData.tte_id || 'TTE-001',
-                                trainName: assignmentData.train_name,
-                                trainNo: assignmentData.train_no,
-                                source: assignmentData.source_station,
-                                destination: assignmentData.dest_station,
-                                shift: assignmentData.shift || 'Full Journey',
-                                coachLabel: assignmentData.coach_labels?.[0] || assignedCoachId || 'S1',
-                                assignedCoachId,
-                                assignedCoaches: assignmentData.coach_ids || [],
-                                // Extra fields from assignment
-                                journeyDate: assignmentData.duty_date || assignmentData.journey_date || assignmentData.date || null,
-                                shiftStart: assignmentData.shift_start || null,
-                                shiftEnd: assignmentData.shift_end || null,
-                                zone: assignmentData.zone || null,
-                                division: assignmentData.division || null,
-                                pantry: assignmentData.pantry != null ? (assignmentData.pantry ? 'Yes' : 'No') : null,
-                                rakeType: assignmentData.rake_type || assignmentData.rakeType || null,
-                            });
+                                setTteDetails({
+                                    name: finalDisplayName,
+                                    id: tteEmployeeId || assignmentData.tte_id || null,
+                                    trainName: assignmentData.train_name,
+                                    trainNo: assignmentData.train_no,
+                                    source: assignmentData.source_station,
+                                    destination: assignmentData.dest_station,
+                                    shift: assignmentData.shift || 'Full Journey',
+                                    coachLabel: assignmentData.coach_labels?.[0] || assignedCoachId || 'S1',
+                                    assignedCoachId,
+                                    assignedCoaches: assignmentData.coach_ids || [],
+                                    // Extra fields from assignment
+                                    journeyDate: assignmentData.duty_date || assignmentData.journey_date || assignmentData.date || null,
+                                    shiftStart: assignmentData.shift_start || null,
+                                    shiftEnd: assignmentData.shift_end || null,
+                                    zone: assignmentData.zone || null,
+                                    division: assignmentData.division || null,
+                                    pantry: assignmentData.pantry != null ? (assignmentData.pantry ? 'Yes' : 'No') : null,
+                                    rakeType: assignmentData.rake_type || assignmentData.rakeType || null,
+                                });
+                            }
+                        } catch (e) {
+                            console.error("[useSmartRail] TTE assignment query failed:", e);
                         }
                     }
 
@@ -221,6 +333,7 @@ export function SmartRailProvider({ children }) {
                         const scheduleRes = await api.getTrainSchedule(tData.train_number);
                         if (scheduleRes && scheduleRes.data && scheduleRes.data.length > 0) {
                             setStations(scheduleRes.data.map(s => s.stationName || s.stationCode));
+                            setStationSchedule(scheduleRes.data); // Store full schedule with distances
                             // Extract departure from first stop, arrival from last stop
                             const firstStop = scheduleRes.data[0];
                             const lastStop = scheduleRes.data[scheduleRes.data.length - 1];
@@ -277,72 +390,79 @@ export function SmartRailProvider({ children }) {
                     if (assignmentData?.coach_ids?.length > 0) {
                         const targetIds = assignmentData.coach_ids.map(id => id.toUpperCase());
                         console.log("[useSmartRail] TTE assigned coaches:", targetIds);
-                        const filtered = mappedCoaches.filter(c => targetIds.includes(c.id.toUpperCase()));
+                        console.log("[useSmartRail] backendMap keys:", Object.keys(backendMap));
                         
-                        // If no matches found from backend, create coaches from assigned IDs 
-                        // and map them to real backend layout data by class type
-                        if (filtered.length === 0) {
-                            console.log("[useSmartRail] No matching coaches from backend, creating from assignment");
-                            // Indian Railways coach naming: S=Sleeper, D=Sleeper, C=ChairCar, A=AC1, B=AC2, H=AC3, E=3E
-                            const inferCoachType = (coachId) => {
-                                const prefix = coachId.charAt(0).toUpperCase();
+                        // Build final coaches list from TTE assignments, using API data directly
+                        const finalCoaches = [];
+                        const finalBackendMap = {};
+                        
+                        for (const assignedId of assignmentData.coach_ids) {
+                            const normalizedId = assignedId.toUpperCase();
+                            
+                            // First check if backend has exact match for this coach ID
+                            let apiCoachData = backendMap[assignedId] || backendMap[normalizedId];
+                            
+                            // Also try case-insensitive search
+                            if (!apiCoachData) {
+                                apiCoachData = Object.values(backendMap).find(c => 
+                                    c.coachId?.toUpperCase() === normalizedId
+                                );
+                            }
+                            
+                            if (apiCoachData) {
+                                // Found in API - use exact API data
+                                console.log(`[useSmartRail] Coach ${assignedId} found in API: ${apiCoachData.classCode}, ${apiCoachData.totalSeats} seats`);
+                                finalBackendMap[assignedId] = apiCoachData;
+                                finalCoaches.push({
+                                    id: assignedId,
+                                    type: apiCoachData.classCode,
+                                    label: assignedId,
+                                    dbId: `api_${assignedId}`
+                                });
+                            } else {
+                                // Not found in API - infer type from prefix and use template
+                                const prefix = assignedId.charAt(0).toUpperCase();
                                 const typeMap = { 
-                                    'S': 'SL',  // Sleeper
-                                    'D': 'SL',  // Sleeper (D-coach series)
-                                    'C': 'CC',  // AC Chair Car
-                                    'A': '1A',  // First AC
-                                    'B': '2A',  // AC 2-Tier
-                                    'H': '3A',  // AC 3-Tier
-                                    'E': '3E',  // 3-Economy
-                                    'G': '2S',  // General/Second Sitting
+                                    'S': 'SL', 'D': '2S', 'C': 'CC', 'A': '1A', 
+                                    'B': '2A', 'H': '3A', 'E': '3E', 'G': '2S'
                                 };
-                                return typeMap[prefix] || 'SL';
-                            };
-                            
-                            // Group backend coaches by class type for layout data reuse
-                            const backendByType = {};
-                            Object.values(backendMap).forEach(coach => {
-                                if (!backendByType[coach.classCode]) {
-                                    backendByType[coach.classCode] = coach;
-                                }
-                            });
-                            
-                            mappedCoaches = assignmentData.coach_ids.map((id, i) => {
-                                const coachType = inferCoachType(id);
-                                // Map this assigned coach to real backend layout data of same type
-                                const realLayout = backendByType[coachType];
-                                if (realLayout) {
-                                    backendMap[id] = { ...realLayout, coachId: id };
+                                const coachType = typeMap[prefix] || 'SL';
+                                console.log(`[useSmartRail] Coach ${assignedId} NOT in API, inferring type: ${coachType}`);
+                                
+                                // Try to find another coach of same type for layout template
+                                const templateCoach = Object.values(backendMap).find(c => c.classCode === coachType);
+                                if (templateCoach) {
+                                    finalBackendMap[assignedId] = { ...templateCoach, coachId: assignedId };
                                 } else {
-                                    // No backend data - create from COACH_CONFIGS
-                                    const configData = COACH_CONFIGS[coachType];
+                                    // Generate from config
+                                    const configData = coachConfigs[coachType] || INITIAL_COACH_CONFIGS[coachType];
                                     if (configData) {
-                                        // Generate seats array from config
-                                        const seats = Array.from({ length: configData.berths }, (_, seatIndex) => ({
-                                            seatNumber: seatIndex + 1,
-                                            berthType: configData.bayLabels[seatIndex % configData.berthsPerBay]
+                                        const seats = Array.from({ length: configData.berths }, (_, i) => ({
+                                            seatNumber: i + 1,
+                                            berthType: configData.bayLabels[i % configData.bayLabels.length] || 'SEAT'
                                         }));
-                                        backendMap[id] = { 
-                                            coachId: id, 
+                                        finalBackendMap[assignedId] = { 
+                                            coachId: assignedId, 
                                             classCode: coachType, 
                                             totalSeats: configData.berths,
                                             seats 
                                         };
                                     }
                                 }
-                                return {
-                                    id: id,
+                                
+                                finalCoaches.push({
+                                    id: assignedId,
                                     type: coachType,
-                                    label: id,
-                                    dbId: `assigned_${i}`
-                                };
-                            });
-                            setBackendCoachMap(backendMap);
-                            console.log("[useSmartRail] Created coaches:", mappedCoaches.map(c => c.id));
-                        } else {
-                            mappedCoaches = filtered;
-                            console.log("[useSmartRail] Using filtered coaches:", mappedCoaches.map(c => c.id));
+                                    label: assignedId,
+                                    dbId: `inferred_${assignedId}`
+                                });
+                            }
                         }
+                        
+                        mappedCoaches = finalCoaches;
+                        backendMap = finalBackendMap;
+                        setBackendCoachMap(finalBackendMap);
+                        console.log("[useSmartRail] Final coaches with API data:", finalCoaches.map(c => `${c.id}(${c.type})`));
                     }
                     
                     console.log("[useSmartRail] Final mappedCoaches:", mappedCoaches.length, mappedCoaches.map(c => `${c.id}(${c.type})`));
@@ -619,17 +739,23 @@ export function SmartRailProvider({ children }) {
 
     const safeCoach = selectedCoach || '';
     const currentCoachObj = coaches.find(c => c.id === safeCoach) || null;
-    const currentCoachType = currentCoachObj?.type || 'SL';
-    const currentConfig = COACH_CONFIGS[currentCoachType];
-    // Use backend seats data (not "berths" - backend returns "seats" array)
+    // Prefer backend data for coach type (ground truth from API)
     const backendCoachData = backendCoachMap[safeCoach];
     
-    console.log("[useSmartRail] Rendering - coaches:", coaches.length, "selectedCoach:", safeCoach, "backendCoachData:", !!backendCoachData, "currentConfig:", !!currentConfig);
+    // DEBUG: Log all keys and what we're looking for
+    console.log("[useSmartRail] DEBUG backendCoachMap keys:", Object.keys(backendCoachMap), "looking for:", safeCoach);
+    console.log("[useSmartRail] DEBUG backendCoachData found:", backendCoachData ? `YES - ${backendCoachData.classCode}` : 'NO');
     
-    const seats = buildCoachSeats(safeCoach, currentCoachType, passengers, backendCoachData?.seats);
+    const currentCoachType = backendCoachData?.classCode || currentCoachObj?.type || 'SL';
+    const currentConfig = coachConfigs[currentCoachType] || INITIAL_COACH_CONFIGS[currentCoachType];
+    
+    console.log("[useSmartRail] Rendering - coaches:", coaches.length, "selectedCoach:", safeCoach, 
+        "backendCoachData:", backendCoachData ? `${backendCoachData.classCode}(${backendCoachData.totalSeats} seats)` : 'none', 
+        "currentCoachType:", currentCoachType, "config:", currentConfig?.label);
+    
+    const seats = buildCoachSeats(safeCoach, currentCoachType, passengers, backendCoachData?.seats, coachConfigs);
 
     const coachPassengers = passengers.filter(p => p.coach === safeCoach);
-    // Use real seat count from backend, fallback to config
     const realTotalSeats = backendCoachData?.totalSeats || backendCoachData?.seats?.length || currentConfig?.berths || 0;
     const stats = {
         totalSeats: realTotalSeats,
@@ -789,8 +915,12 @@ export function SmartRailProvider({ children }) {
     const value = {
         time, passengers: coachPassengers, allPassengers: passengers, coaches, incidents, fines, reviews, complaints,
         selectedCoach, setSelectedCoach, tteInfo, stats, seats, dataSource, loading, error,
-        verifyPassenger, upgradeRAC, addLog, logs, getBerthLabel, getBerthFull, getBay, isSideBerth,
-        stations, stationIndex, nextStation, issueTicket, coachConfigs: COACH_CONFIGS,
+        verifyPassenger, upgradeRAC, addLog, logs, 
+        getBerthLabel: (num, type) => getBerthLabel(num, type, coachConfigs), 
+        getBerthFull: (num, type) => getBerthFull(num, type, coachConfigs), 
+        getBay: (num, type) => getBay(num, type, coachConfigs), 
+        isSideBerth: (num, type) => isSideBerth(num, type, coachConfigs),
+        stations, stationIndex, stationSchedule, nextStation, issueTicket, coachConfigs,
         // Additional exports for TTE pages
         currentCoachType, currentConfig,
         currentStation: stations[stationIndex] || stations[0],

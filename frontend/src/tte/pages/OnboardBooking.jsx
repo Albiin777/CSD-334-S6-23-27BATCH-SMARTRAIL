@@ -1,7 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useSmartRail } from '../hooks/useSmartRail';
 import { Ticket, QrCode, CreditCard, CheckCircle, Train, MapPin } from 'lucide-react';
-import STATION_DISTANCES from './stationDistances.json';
 
 const CLASS_FARES = {
     '1A': { label: 'First AC (1A)', color: '#a855f7', basePerKm: 4.5, min: 1500, icon: '🟣' },
@@ -12,24 +11,27 @@ const CLASS_FARES = {
     '2S': { label: '2nd Sitting (2S)', color: '#f97316', basePerKm: 0.30, min: 80, icon: '🟠' },
 };
 
-function calcFare(classKey, from, to) {
-    const d1 = STATION_DISTANCES[from] ?? 0;
-    const d2 = STATION_DISTANCES[to] ?? 0;
-    const dist = Math.abs(d2 - d1);
-    const cfg = CLASS_FARES[classKey];
-    if (!cfg || dist === 0) return { fare: 0, distance: 0 };
-    const base = Math.round(dist * cfg.basePerKm);
-    const fare = Math.max(base, cfg.min);
-    const surcharge = ['1A', '2A', '3A', 'CC'].includes(classKey) ? 50 : 20;
-    return { fare: fare + surcharge, distance: Math.round(dist) };
-}
-
 export default function OnboardBooking() {
-    const { addLog, stations, currentStation } = useSmartRail();
-    const [form, setForm] = useState({ name: '', age: '', gender: 'Male', mobile: '', from: currentStation || stations[0] || '', to: 'New Delhi', classKey: '3A' });
+    const { addLog, stations, stationSchedule, currentStation } = useSmartRail();
+    const [form, setForm] = useState({ name: '', age: '', gender: 'Male', mobile: '', from: currentStation || stations[0] || '', to: stations[stations.length - 1] || '', classKey: '3A' });
     const [booked, setBooked] = useState(null);
 
-    const { fare, distance } = useMemo(() => calcFare(form.classKey, form.from, form.to), [form.classKey, form.from, form.to]);
+    // Calculate fare using station schedule distances from API
+    const calcFare = useCallback((classKey, from, to) => {
+        const fromStation = stationSchedule.find(s => s.stationName === from || s.stationCode === from);
+        const toStation = stationSchedule.find(s => s.stationName === to || s.stationCode === to);
+        const d1 = fromStation?.distanceFromSourceKm ?? 0;
+        const d2 = toStation?.distanceFromSourceKm ?? 0;
+        const dist = Math.abs(d2 - d1);
+        const cfg = CLASS_FARES[classKey];
+        if (!cfg || dist === 0) return { fare: 0, distance: 0 };
+        const base = Math.round(dist * cfg.basePerKm);
+        const fare = Math.max(base, cfg.min);
+        const surcharge = ['1A', '2A', '3A', 'CC'].includes(classKey) ? 50 : 20;
+        return { fare: fare + surcharge, distance: Math.round(dist) };
+    }, [stationSchedule]);
+
+    const { fare, distance } = useMemo(() => calcFare(form.classKey, form.from, form.to), [calcFare, form.classKey, form.from, form.to]);
     const selectedClass = CLASS_FARES[form.classKey] || CLASS_FARES['3A'];
 
     const handleBook = (e) => {

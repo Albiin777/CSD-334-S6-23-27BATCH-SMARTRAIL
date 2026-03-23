@@ -1,4 +1,4 @@
-import { adminDb } from '../config/firebaseAdmin.js';
+import { adminDb, FieldValue } from '../config/firebaseAdmin.js';
 
 // Get notifications for a user (including global broadcasts where user_id is null)
 export const getUserNotifications = async (req, res) => {
@@ -15,9 +15,19 @@ export const getUserNotifications = async (req, res) => {
       .where('userId', '==', null)
       .get();
 
+    // For user-specific notifications, use is_read directly
+    // For broadcasts, check if userId is in readBy array
     const notifications = [
       ...userNotifsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
-      ...broadcastNotifsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      ...broadcastNotifsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        const readBy = data.readBy || [];
+        return { 
+          id: doc.id, 
+          ...data, 
+          is_read: readBy.includes(userId) // Check if current user has read this broadcast
+        };
+      })
     ].sort((a, b) => {
         const dateA = new Date(a.created_at || a.timestamp || 0);
         const dateB = new Date(b.created_at || b.timestamp || 0);
@@ -40,14 +50,30 @@ export const markAsRead = async (req, res) => {
     const notifRef = adminDb.collection('notifications').doc(id);
     const notifDoc = await notifRef.get();
 
-    if (!notifDoc.exists || notifDoc.data().userId !== userId) {
-      return res.status(404).json({ message: 'Notification not found or access denied' });
+    if (!notifDoc.exists) {
+      return res.status(404).json({ message: 'Notification not found' });
     }
 
-    await notifRef.update({ is_read: true });
+    const notifData = notifDoc.data();
     
-    res.json({ id, ...notifDoc.data(), is_read: true });
+    // Handle broadcast notifications (userId is null)
+    if (notifData.userId === null) {
+      // Add user to readBy array for broadcasts
+      await notifRef.update({ 
+        readBy: FieldValue.arrayUnion(userId) 
+      });
+      res.json({ id, ...notifData, is_read: true });
+    } 
+    // Handle user-specific notifications
+    else if (notifData.userId === userId) {
+      await notifRef.update({ is_read: true });
+      res.json({ id, ...notifData, is_read: true });
+    } 
+    else {
+      return res.status(403).json({ message: 'Access denied' });
+    }
   } catch (error) {
+    console.error('Error marking as read:', error);
     res.status(500).json({ message: 'Failed to mark as read', error: error.message });
   }
 };
@@ -56,24 +82,38 @@ export const markAsRead = async (req, res) => {
 export const markAllAsRead = async (req, res) => {
   try {
     const userId = req.user.id;
+    let updatedCount = 0;
 
+    // 1. Mark user-specific notifications as read
     const unreadSnapshot = await adminDb.collection('notifications')
       .where('userId', '==', userId)
       .where('is_read', '==', false)
       .get();
 
-    if (unreadSnapshot.empty) {
-      return res.json({ message: 'No unread notifications', updatedCount: 0 });
-    }
-
     const batch = adminDb.batch();
     unreadSnapshot.docs.forEach(doc => {
       batch.update(doc.ref, { is_read: true });
+      updatedCount++;
     });
 
-    await batch.commit();
+    // 2. Mark broadcast notifications as read for this user
+    const broadcastSnapshot = await adminDb.collection('notifications')
+      .where('userId', '==', null)
+      .get();
 
-    res.json({ message: 'All notifications marked as read', updatedCount: unreadSnapshot.size });
+    broadcastSnapshot.docs.forEach(doc => {
+      const readBy = doc.data().readBy || [];
+      if (!readBy.includes(userId)) {
+        batch.update(doc.ref, { readBy: FieldValue.arrayUnion(userId) });
+        updatedCount++;
+      }
+    });
+
+    if (updatedCount > 0) {
+      await batch.commit();
+    }
+
+    res.json({ message: 'All notifications marked as read', updatedCount });
   } catch (error) {
     console.error('Error marking all as read:', error);
     res.status(500).json({ message: 'Failed to mark all as read', error: error.message });
@@ -83,7 +123,7 @@ export const markAllAsRead = async (req, res) => {
 // Admin creating a broadcast notification
 export const createAdminBroadcast = async (req, res) => {
   try {
-    const { type, title, message, link } = req.body;
+    const { type, title, message, link, target = 'all' } = req.body;
     
     const notifData = { 
       userId: null, 
@@ -91,6 +131,7 @@ export const createAdminBroadcast = async (req, res) => {
       title, 
       message, 
       link,
+      target, // 'all', 'passengers', or 'ttes'
       for_you: false,
       is_read: false,
       created_at: new Date().toISOString()

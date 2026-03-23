@@ -7,6 +7,7 @@ import { auth, storage } from "../utils/firebaseClient";
 import { onAuthStateChanged } from "firebase/auth";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import api from "../api/train.api";
+import { API_BASE_URL } from "../api/config";
 
 export default function Support({ autoScroll = true }) {
   const [files, setFiles] = useState([]);
@@ -105,7 +106,7 @@ export default function Support({ autoScroll = true }) {
           return;
         }
 
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/complaints/${selectedComplaint.id}/replies`, {
+        const response = await fetch(`${API_BASE_URL}/complaints/${selectedComplaint.id}/replies`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -148,7 +149,7 @@ export default function Support({ autoScroll = true }) {
     setLoadingHistory(true);
     try {
       const token = await auth.currentUser?.getIdToken();
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/complaints`, {
+      const response = await fetch(`${API_BASE_URL}/complaints`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -217,7 +218,7 @@ export default function Support({ autoScroll = true }) {
       }
 
       // Use the backend API which has firebaseAdmin (bypasses RLS)
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/complaints/${selectedComplaint.id}/replies`, {
+      const response = await fetch(`${API_BASE_URL}/complaints/${selectedComplaint.id}/replies`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -275,7 +276,7 @@ export default function Support({ autoScroll = true }) {
 
       // 2. Delete DB record via backend
       const token = await auth.currentUser?.getIdToken();
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/complaints/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/complaints/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -321,7 +322,7 @@ export default function Support({ autoScroll = true }) {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("Authentication session expired.");
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/complaints`, {
+      const response = await fetch(`${API_BASE_URL}/complaints`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

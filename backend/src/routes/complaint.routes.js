@@ -5,6 +5,30 @@ import { authenticateToken } from '../middlewares/auth.middleware.js';
 const router = express.Router();
 
 // =====================================================
+// GET /api/complaints/admin/all
+// Admin: Fetch ALL complaints (optionally filter by train)
+// =====================================================
+router.get('/admin/all', authenticateToken, async (req, res) => {
+    try {
+        const { train } = req.query;
+
+        let queryRef = adminDb.collection('complaints').orderBy('created_at', 'desc');
+        if (train) {
+            queryRef = adminDb.collection('complaints')
+                .where('train_number', '==', String(train))
+                .orderBy('created_at', 'desc');
+        }
+
+        const snap = await queryRef.get();
+        const complaints = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        res.json(complaints);
+    } catch (error) {
+        console.error('Error fetching all complaints (admin):', error);
+        res.status(500).json({ error: 'Failed to fetch complaints' });
+    }
+});
+
+// =====================================================
 // GET /api/complaints
 // Fetch all complaints for the authenticated user
 // =====================================================
@@ -204,6 +228,69 @@ router.delete('/:complaintId', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Error deleting complaint:', error);
         res.status(500).json({ error: 'Failed to delete complaint' });
+    }
+});
+
+// =====================================================
+// GET /api/complaints/:complaintId/replies/admin
+// Admin: Fetch replies for any complaint (no ownership check)
+// =====================================================
+router.get('/:complaintId/replies/admin', authenticateToken, async (req, res) => {
+    try {
+        const { complaintId } = req.params;
+
+        const repliesSnapshot = await adminDb.collection('complaint_replies')
+            .where('complaint_id', '==', complaintId)
+            .orderBy('created_at', 'asc')
+            .get();
+
+        const replies = repliesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        res.json({ replies });
+    } catch (error) {
+        console.error('Error fetching admin replies:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// =====================================================
+// POST /api/complaints/:complaintId/replies/admin
+// Admin: Post a reply to any complaint (no ownership check)
+// =====================================================
+router.post('/:complaintId/replies/admin', authenticateToken, async (req, res) => {
+    try {
+        const { complaintId } = req.params;
+        const { message, marks_resolved, new_status } = req.body;
+
+        if (!message || !message.trim()) {
+            return res.status(400).json({ error: 'Message is required' });
+        }
+
+        const complaintRef = adminDb.collection('complaints').doc(complaintId);
+        const complaintDoc = await complaintRef.get();
+
+        if (!complaintDoc.exists) {
+            return res.status(404).json({ error: 'Complaint not found' });
+        }
+
+        const now = new Date().toISOString();
+        const replyData = {
+            complaint_id: complaintId,
+            message: message.trim(),
+            is_admin_reply: true,
+            marks_resolved: !!marks_resolved,
+            created_at: now
+        };
+
+        const replyRef = await adminDb.collection('complaint_replies').add(replyData);
+
+        // Update complaint status
+        const updateStatus = new_status || (marks_resolved ? 'resolved' : 'in-progress');
+        await complaintRef.update({ status: updateStatus, updated_at: now });
+
+        res.status(201).json({ reply: { id: replyRef.id, ...replyData } });
+    } catch (error) {
+        console.error('Error posting admin reply:', error);
+        res.status(500).json({ error: 'Internal server error', details: error.message });
     }
 });
 

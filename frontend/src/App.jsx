@@ -194,12 +194,16 @@ export default function App() {
     location.pathname.startsWith('/seat-layout') ||
     location.pathname.startsWith('/payment') ||
     location.pathname.startsWith('/results') ||
-    location.pathname.startsWith('/notifications') ||
-    location.pathname.startsWith('/my-account') ||
-    location.pathname.startsWith('/my-bookings') ||
     location.pathname.startsWith('/passenger-details') ||
     location.pathname.startsWith('/admin') ||
     location.pathname.startsWith('/tte');
+
+  // Pages that manage their own top spacing (no global pt-[70px] needed)
+  const isNoPaddingPage =
+    isMiniFooterPage ||
+    location.pathname.startsWith('/notifications') ||
+    location.pathname.startsWith('/my-account') ||
+    location.pathname.startsWith('/my-bookings');
 
   const swapStations = () => {
     const temp = fromStation;
@@ -326,7 +330,7 @@ export default function App() {
         </Routes>
       ) : (
         <>
-          <div className={`min-h-screen flex flex-col ${isMiniFooterPage ? '' : 'pt-[70px]'}`}>
+          <div className={`min-h-screen flex flex-col ${isNoPaddingPage ? '' : 'pt-[70px]'}`}>
             <main className="flex-grow">
               <Routes>
                 <Route
@@ -354,7 +358,7 @@ export default function App() {
                 <Route path="/seat-layout/:trainNumber/:classType" element={<SeatLayout />} />
                 <Route path="/passenger-details" element={<PassengerDetails />} />
                 <Route path="/payment" element={<PaymentGateway />} />
-                <Route path="/notifications" element={<AllNotifications />} />
+                <Route path="/notifications" element={<AllNotifications className="scroll-mt-[120px]"/>} />
                 <Route path="/my-account" element={<MyAccount />} />
                 <Route path="/my-bookings" element={<MyBookings />} />
 

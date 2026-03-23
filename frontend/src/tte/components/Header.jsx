@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Menu, Bell, AlertTriangle, UserX, ShieldAlert, X, LogOut, ChevronDown, User, Train, Clock, MapPin, Database, Info } from 'lucide-react';
 import { useSmartRail } from '../hooks/useSmartRail';
 import { db } from '../../utils/firebaseClient';
-import { collection, query, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, limit } from 'firebase/firestore';
 
 const pageTitles = {
     '/': 'Dashboard',
@@ -30,19 +30,26 @@ export default function Header({ onMenuClick }) {
 
     const [adminNotifs, setAdminNotifs] = useState([]);
 
-    // Fetch admin notifications from Firebase
+    // Fetch admin notifications from Firebase with real-time listener
     useEffect(() => {
-        async function fetchNotifications() {
-            try {
-                const q = query(collection(db, 'notifications'), orderBy('created_at', 'desc'), limit(10));
-                const snap = await getDocs(q);
+        try {
+            const q = query(collection(db, 'notifications'), orderBy('created_at', 'desc'), limit(10));
+            
+            // Use onSnapshot for real-time updates
+            const unsubscribe = onSnapshot(q, (snap) => {
                 const notifs = snap.docs
                     .map(d => ({ id: d.id, ...d.data() }))
                     .filter(n => (n.userId === null || n.userId === undefined) && (n.target === 'all' || n.target === 'ttes'));
                 setAdminNotifs(notifs);
-            } catch (e) { console.warn('Failed to fetch notifications:', e); }
+            }, (error) => {
+                console.warn('Failed to fetch notifications:', error);
+            });
+
+            // Cleanup subscription on unmount
+            return () => unsubscribe();
+        } catch (e) { 
+            console.warn('Failed to setup notification listener:', e); 
         }
-        fetchNotifications();
     }, []);
 
     // Close dropdowns on outside click

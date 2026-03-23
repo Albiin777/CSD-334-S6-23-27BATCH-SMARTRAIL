@@ -637,3 +637,12 @@ export async function updateTrainDetails(req, res) {
         return res.status(500).json({ success: false, error: err.message });
     }
 }
+
+export async function getCoachTypes(req, res) {
+    try {
+        const coachTypes = Array.from(dataStore.coachTypesMap.values());
+        res.json(coachTypes);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+}

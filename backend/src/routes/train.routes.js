@@ -11,7 +11,8 @@ import {
     getStationDetails,
     getFare,
     getCoachAllocation,
-    updateTrainDetails
+    updateTrainDetails,
+    getCoachTypes
 } from '../controllers/train.controller.js';
 
 const router = Router();
@@ -28,5 +29,6 @@ router.get('/:trainNumber/availability', getAvailability);
 router.get('/:trainNumber/coach-allocation', getCoachAllocation);
 router.get('/:trainNumber/fare', getFare);
 router.get('/station/:stationCode', getStationDetails);
+router.get('/config/coach-types', getCoachTypes);
 
 export default router;

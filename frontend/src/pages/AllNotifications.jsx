@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Ticket, Info, Newspaper, Inbox, Bell, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, Ticket, Info, Newspaper, Inbox, Bell, CheckCircle2, X, Clock, ExternalLink } from 'lucide-react';
 import { notificationApi } from '../api/notification.api';
 import { auth } from '../utils/firebaseClient';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -9,21 +9,32 @@ export default function AllNotifications() {
     const [notifications, setNotifications] = useState([]);
     const [activeTab, setActiveTab] = useState('all'); // 'all' | 'foryou'
     const [isLoading, setIsLoading] = useState(true);
+    const [authLoading, setAuthLoading] = useState(true); // Track auth state loading
+    const [selectedNotif, setSelectedNotif] = useState(null); // Selected notification for detail view
     const navigate = useNavigate();
     const [user, setUser] = useState(null);
 
     const isLoggedIn = !!user;
 
+    // Scroll to top on mount
+    useEffect(() => {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+    }, []);
+
     // Firebase auth state listener
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
+            setAuthLoading(false);
         });
 
         return () => unsubscribe();
     }, []);
 
     useEffect(() => {
+        // Don't fetch until auth state is determined
+        if (authLoading) return;
+        
         const fetchNotifications = async () => {
             try {
                 setIsLoading(true);
@@ -43,7 +54,7 @@ export default function AllNotifications() {
             setIsLoading(false);
             setNotifications([]);
         }
-    }, [isLoggedIn]);
+    }, [isLoggedIn, authLoading]);
 
     const filteredNotifications = notifications.filter(n => {
         if (activeTab === 'foryou') return n.for_you;
@@ -74,21 +85,39 @@ export default function AllNotifications() {
         if (!notif.is_read) {
             markAsRead(notif.id);
         }
-        if (notif.link && notif.link !== '#') {
-            navigate(notif.link);
+        // Show the notification detail modal
+        setSelectedNotif(notif);
+    };
+
+    const getIcon = (type, isRead, size = 22) => {
+        const iconClass = isRead ? "text-slate-500" : "text-white";
+
+        switch (type) {
+            case 'alert': return <AlertTriangle size={size} className={iconClass} />;
+            case 'reminder': return <Ticket size={size} className={iconClass} />;
+            case 'info': return <Info size={size} className={iconClass} />;
+            case 'news': return <Newspaper size={size} className={iconClass} />;
+            default: return <Bell size={size} className={iconClass} />;
         }
     };
 
-    const getIcon = (type, isRead) => {
-        const iconClass = isRead ? "text-slate-500" : "text-white";
-        const iconSize = 22;
-
+    const getTypeLabel = (type) => {
         switch (type) {
-            case 'alert': return <AlertTriangle size={iconSize} className={iconClass} />;
-            case 'reminder': return <Ticket size={iconSize} className={iconClass} />;
-            case 'info': return <Info size={iconSize} className={iconClass} />;
-            case 'news': return <Newspaper size={iconSize} className={iconClass} />;
-            default: return <Bell size={iconSize} className={iconClass} />;
+            case 'alert': return 'Alert';
+            case 'reminder': return 'Reminder';
+            case 'info': return 'Information';
+            case 'news': return 'News';
+            default: return 'Notification';
+        }
+    };
+
+    const getTypeColor = (type) => {
+        switch (type) {
+            case 'alert': return 'bg-red-500/20 text-red-400 border-red-500/30';
+            case 'reminder': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+            case 'info': return 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30';
+            case 'news': return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+            default: return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
         }
     };
 
@@ -125,8 +154,8 @@ export default function AllNotifications() {
                     <button
                         onClick={() => setActiveTab('all')}
                         className={`px-5 py-2.5 rounded-t-lg font-medium text-sm transition-colors border-b-2 ${activeTab === 'all'
-                            ? 'text-orange-500 border-orange-500 bg-[#1D2332]/50'
-                            : 'text-gray-400 border-transparent hover:text-gray-200 hover:bg-white/5'
+                            ? 'text-orange-500 border-orange-500 bg-[#1D2332]/50 '
+                            : 'text-gray-400 border-transparent hover:text-gray-200 hover:bg-white/5 '
                             }`}
                     >
                         All Notifications
@@ -145,7 +174,7 @@ export default function AllNotifications() {
 
                 {/* Notifications List */}
                 <div className="bg-[#1D2332] rounded-xl border border-gray-700 shadow-lg overflow-hidden">
-                    {isLoading ? (
+                    {(isLoading || authLoading) ? (
                         <div className="px-6 py-16 text-center text-gray-500 flex flex-col items-center">
                             <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mb-4"></div>
                             <p className="text-sm font-medium">Loading notifications...</p>
@@ -193,17 +222,15 @@ export default function AllNotifications() {
                                                 </span>
                                             </div>
 
-                                            <p className={`text-sm leading-relaxed mb-3 ${notif.is_read ? 'text-gray-500' : 'text-gray-400'}`}>
+                                            <p className={`text-sm leading-relaxed mb-3 line-clamp-2 ${notif.is_read ? 'text-gray-500' : 'text-gray-400'}`}>
                                                 {notif.message}
                                             </p>
 
                                             {/* Action Links */}
-                                            {notif.link && (
-                                                <div className="flex items-center gap-1.5 text-xs font-semibold text-orange-500 group-hover:text-orange-400 transition">
-                                                    <span>{notif.type === 'news' ? 'Read Article' : 'View Details'}</span>
-                                                    <span className="group-hover:translate-x-1 transition-transform">→</span>
-                                                </div>
-                                            )}
+                                            <div className="flex items-center gap-1.5 text-xs font-semibold text-orange-500 hover:text-orange-400 transition">
+                                                <span>View Details</span>
+                                                <span className="group-hover:translate-x-1 transition-transform">→</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -213,6 +240,103 @@ export default function AllNotifications() {
                 </div>
 
             </div>
+
+            {/* Notification Detail Modal */}
+            {selectedNotif && (
+                <div 
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+                    onClick={() => setSelectedNotif(null)}
+                >
+                    <div 
+                        className="bg-[#1D2332] rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-hidden border border-gray-700"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Modal Header */}
+                        <div className="flex items-start justify-between p-5 border-b border-gray-700 bg-[#212838]">
+                            <div className="flex items-center gap-3">
+                                <div className={`p-2.5 rounded-xl ${getTypeColor(selectedNotif.type).replace('text-', 'bg-').split(' ')[0]}`}>
+                                    {getIcon(selectedNotif.type, false, 24)}
+                                </div>
+                                <div>
+                                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${getTypeColor(selectedNotif.type)}`}>
+                                        {getTypeLabel(selectedNotif.type)}
+                                    </span>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => setSelectedNotif(null)}
+                                className="p-2 hover:bg-white/10 rounded-lg transition text-gray-400 hover:text-white"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-6 overflow-y-auto max-h-[60vh]">
+                            {/* Title */}
+                            <h2 className="text-xl font-bold text-white mb-3">
+                                {selectedNotif.title}
+                            </h2>
+
+                            {/* Date & Time */}
+                            <div className="flex items-center gap-2 text-gray-400 text-sm mb-5">
+                                <Clock size={14} />
+                                <span>
+                                    {new Date(selectedNotif.created_at).toLocaleDateString('en-IN', {
+                                        weekday: 'long',
+                                        year: 'numeric',
+                                        month: 'long',
+                                        day: 'numeric'
+                                    })}
+                                    {' at '}
+                                    {new Date(selectedNotif.created_at).toLocaleTimeString('en-IN', {
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                    })}
+                                </span>
+                            </div>
+
+                            {/* Full Message */}
+                            <div className="bg-[#0f172a] rounded-xl p-5 border border-gray-700/50">
+                                <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
+                                    {selectedNotif.message}
+                                </p>
+                            </div>
+
+                            {/* Additional Info if available */}
+                            {selectedNotif.for_you && (
+                                <div className="mt-4 flex items-center gap-2 text-emerald-400 text-xs font-semibold bg-emerald-500/10 px-3 py-2 rounded-lg border border-emerald-500/20">
+                                    <Bell size={14} />
+                                    <span>This notification is personalized for you</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="flex items-center justify-between gap-3 p-5 border-t border-gray-700 bg-[#212838]">
+                            <button
+                                onClick={() => setSelectedNotif(null)}
+                                className="px-4 py-2.5 text-sm font-semibold text-gray-400 hover:text-white transition"
+                            >
+                                Close
+                            </button>
+                            
+                            {selectedNotif.link && selectedNotif.link !== '#' && selectedNotif.link.startsWith('/') && (
+                                <button
+                                    onClick={() => {
+                                        setSelectedNotif(null);
+                                        navigate(selectedNotif.link);
+                                    }}
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg transition"
+                                >
+                                    <ExternalLink size={16} />
+                                    Go to Link
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

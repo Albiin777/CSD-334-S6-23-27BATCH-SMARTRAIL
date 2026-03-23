@@ -29,4 +29,6 @@ try {
   console.error('Failed to initialize Firebase Admin SDK:', error);
 }
 
-export { adminAuth, adminDb };
+const FieldValue = admin.firestore.FieldValue;
+
+export { adminAuth, adminDb, FieldValue };

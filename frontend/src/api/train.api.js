@@ -71,6 +71,13 @@ const api = {
         return await res.json();
     },
 
+    // Get list of all global coach types (SL-72, 3A-64, etc)
+    getCoachTypes: async () => {
+        const res = await fetch(`${API_BASE_URL}/trains/config/coach-types`);
+        if (!res.ok) throw new Error('Failed to fetch coach types');
+        return await res.json();
+    },
+
 
     // --- Stations ---
 

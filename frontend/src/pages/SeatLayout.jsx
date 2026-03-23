@@ -507,9 +507,6 @@ export default function SeatLayout() {
                         <p className="text-gray-400 max-w-md mx-auto">
                             Seats are not allocated for General tickets. You can book for as many passengers as you need and find a seat upon boarding.
                         </p>
-                        <p className="text-[#4ab86d] font-bold mt-2">
-                            Select the number of passengers above and click Continue.
-                        </p>
                     </div>
                 ) : layoutData?.coaches?.length > 0 ? (
                     <div className="flex flex-col lg:flex-row gap-8">
