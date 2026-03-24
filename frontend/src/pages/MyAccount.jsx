@@ -27,6 +27,11 @@ export default function MyAccount() {
     const timerRef = useRef(null);
 
     useEffect(() => {
+        // Ensure page opens from the heading section under fixed header/nav bars.
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }, []);
+
+    useEffect(() => {
         let mounted = true;
 
         const loadUserData = async (currentUser) => {

@@ -12,7 +12,6 @@ import Auth from "./components/Auth";
 import Support from "./pages/Support";
 import Results from "./pages/Results";
 import Reviews from "./components/Reviews";
-import SmartRailChatbot from "./components/SmartRailChatbot";
 import PassengerDetails from "./pages/PassengerDetails";
 
 import AdminDashboard from "./pages/AdminDashboard";
@@ -45,6 +44,7 @@ import AboutSection from "./components/AboutSection";
 import { auth, db } from "./utils/firebaseClient";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
+import SmartRailChatbot from "./components/SmartRailChatbot";
 /* ==================== Icon Components ==================== */
 function SearchIcon({ size = 20, className = "" }) {
   return (
@@ -390,8 +390,8 @@ export default function App() {
               </Routes>
             </main>
           </div>
-          {!location.pathname.startsWith('/admin') && <SmartRailChatbot />}
           {!location.pathname.startsWith('/admin') && (isMiniFooterPage ? <MiniFooter /> : <Footer />)}
+          {location.pathname === '/' && <SmartRailChatbot />}
         </>
       )}
     </div>

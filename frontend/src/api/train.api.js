@@ -219,7 +219,18 @@ const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(blockPayload)
         });
-        if (!res.ok) throw new Error('Failed to block seat');
+        if (!res.ok) {
+            let message = 'Failed to block seat';
+            try {
+                const err = await res.json();
+                message = err?.error || err?.message || message;
+            } catch (_) {
+                // keep default message
+            }
+            const error = new Error(message);
+            error.status = res.status;
+            throw error;
+        }
         return await res.json();
     },
 
@@ -229,7 +240,28 @@ const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(blockPayload)
         });
-        if (!res.ok) throw new Error('Failed to unblock seat');
+        if (!res.ok) {
+            let message = 'Failed to unblock seat';
+            try {
+                const err = await res.json();
+                message = err?.error || err?.message || message;
+            } catch (_) {
+                // keep default message
+            }
+            const error = new Error(message);
+            error.status = res.status;
+            throw error;
+        }
+        return await res.json();
+    },
+
+    getActiveSeatBlocks: async (trainNumber, journeyDate) => {
+        const params = new URLSearchParams({
+            trainNumber: String(trainNumber),
+            journeyDate
+        });
+        const res = await api._fetchWithAuth(`${API_BASE_URL}/seat-blocks/active?${params.toString()}`);
+        if (!res.ok) throw new Error('Failed to fetch active seat blocks');
         return await res.json();
     }
 };

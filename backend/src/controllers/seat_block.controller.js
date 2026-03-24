@@ -11,7 +11,8 @@ const blockSeat = async (req, res) => {
         }
 
         const blockId = `${trainNumber}_${journeyDate}_${seatId}`;
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+        const HOLD_DURATION_MS = 5 * 60 * 1000;
+        const expiresAt = new Date(Date.now() + HOLD_DURATION_MS).toISOString();
 
         // 1. Check if already confirmed booked (with segment filtering)
         const bookedSeats = await bookingService.getBookedSeatsList(trainNumber, journeyDate, source, destination);
@@ -77,7 +78,38 @@ const unblockSeat = async (req, res) => {
     }
 };
 
+const getActiveBlocks = async (req, res) => {
+    try {
+        const { trainNumber, journeyDate } = req.query;
+        const userId = req.user?.id || null;
+
+        if (!trainNumber || !journeyDate) {
+            return res.status(400).json({ error: "Missing required query params: trainNumber, journeyDate" });
+        }
+
+        const snapshot = await adminDb
+            .collection('seat_blocks')
+            .where('train_number', '==', String(trainNumber))
+            .where('journey_date', '==', journeyDate)
+            .get();
+
+        const nowIso = new Date().toISOString();
+        const blockedSeatIds = snapshot.docs
+            .map(doc => doc.data())
+            .filter(block => block?.expires_at > nowIso)
+            .filter(block => !(userId && block?.user_id === userId))
+            .map(block => block.seat_id)
+            .filter(Boolean);
+
+        return res.status(200).json({ blockedSeats: blockedSeatIds });
+    } catch (err) {
+        console.error("Get Active Seat Blocks Error:", err);
+        return res.status(500).json({ error: err.message });
+    }
+};
+
 export default {
     blockSeat,
-    unblockSeat
+    unblockSeat,
+    getActiveBlocks
 };

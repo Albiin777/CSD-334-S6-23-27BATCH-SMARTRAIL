@@ -5,12 +5,6 @@ const WEBHOOK_URL =
   import.meta.env.VITE_RASA_WEBHOOK_URL ||
   "http://localhost:5005/webhooks/rest/webhook";
 
-const isLocalWebhookOnNonLocalHost =
-  WEBHOOK_URL.includes("localhost") &&
-  typeof window !== "undefined" &&
-  window.location.hostname !== "localhost" &&
-  window.location.hostname !== "127.0.0.1";
-
 function toBotMessages(payload) {
   if (!Array.isArray(payload)) return [];
 
@@ -63,19 +57,10 @@ export default function SmartRailChatbot() {
       }
 
       setChat((prev) => [...prev, ...botMessages]);
-    } catch (err) {
-      console.error("[SmartRailChatbot] Bot request failed", {
-        webhookUrl: WEBHOOK_URL,
-        error: err?.message || String(err),
-      });
-
-      const fallbackText = isLocalWebhookOnNonLocalHost
-        ? "Assistant endpoint is set to localhost. Configure VITE_RASA_WEBHOOK_URL to your live bot URL."
-        : "SmartRail assistant is currently unreachable.";
-
+    } catch {
       setChat((prev) => [
         ...prev,
-        { sender: "bot", text: fallbackText },
+        { sender: "bot", text: "SmartRail assistant is currently unreachable." },
       ]);
     }
   };

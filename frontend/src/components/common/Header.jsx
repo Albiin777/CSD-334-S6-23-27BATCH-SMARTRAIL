@@ -107,6 +107,10 @@ function Header({ onLoginClick, user: propUser, userRole, isAuthLoading }) {
                   onClick={() => {
                     navigate('/my-account');
                     setShowDropdown(false);
+                    // Force reset to top even if user is already on /my-account
+                    requestAnimationFrame(() => {
+                      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+                    });
                   }}
                   className="w-full text-left px-4 py-2 text-[#2B2B2B] dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition"
                 >

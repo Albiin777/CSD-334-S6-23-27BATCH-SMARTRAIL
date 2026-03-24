@@ -113,6 +113,29 @@ export default function SeatLayout() {
 
     const [trainRunsOnDate, setTrainRunsOnDate] = useState(true);
 
+    const fetchUnavailableSeatIds = async () => {
+        let bookedSeatIds = [];
+        let blockedSeatIds = [];
+
+        if (isTrainSearchMode) return { bookedSeatIds, blockedSeatIds };
+
+        try {
+            const bookingRes = await api.getBookedSeats(trainNumber, journeyDate, source, destination);
+            bookedSeatIds = bookingRes?.bookedSeats || [];
+        } catch (e) {
+            console.error("Could not fetch bookings", e);
+        }
+
+        try {
+            const blockRes = await api.getActiveSeatBlocks(trainNumber, journeyDate);
+            blockedSeatIds = blockRes?.blockedSeats || [];
+        } catch (e) {
+            console.error("Could not fetch active seat blocks", e);
+        }
+
+        return { bookedSeatIds, blockedSeatIds };
+    };
+
     // Fetch seat layout + train name + actual bookings
     useEffect(() => {
         const fetchData = async () => {
@@ -140,16 +163,9 @@ export default function SeatLayout() {
                     }
                 }
 
-                // Fetch actual bookings to gray out unavailable seats
-                let bookedSeatIds = [];
-                try {
-                    if (!isTrainSearchMode) {
-                        const bookingRes = await api.getBookedSeats(trainNumber, journeyDate, source, destination);
-                        if (bookingRes?.bookedSeats) {
-                            bookedSeatIds = bookingRes.bookedSeats;
-                        }
-                    }
-                } catch (e) { console.error("Could not fetch bookings", e); }
+                // Fetch unavailable seats (booked + currently held by others)
+                const { bookedSeatIds, blockedSeatIds } = await fetchUnavailableSeatIds();
+                const unavailableSeatIds = new Set([...bookedSeatIds, ...blockedSeatIds]);
 
                 if (data?.coaches) {
                     // Extract short code from "Sleeper (SL)" style strings
@@ -166,11 +182,15 @@ export default function SeatLayout() {
                         return {
                             ...c,
                             coachId: cid,
-                            seats: c.seats.map(seat => ({
-                                ...seat,
-                                // Override isBooked with real DB data if available
-                                isBooked: bookedSeatIds.includes(`${cid}-${seat.seatNumber}`) || seat.isBooked
-                            }))
+                            seats: c.seats.map(seat => {
+                                const baseBooked = Boolean(seat.isBooked);
+                                return {
+                                    ...seat,
+                                    baseBooked,
+                                    // base booked from layout + dynamic booked/held from backend
+                                    isBooked: baseBooked || unavailableSeatIds.has(`${cid}-${seat.seatNumber}`)
+                                };
+                            })
                         };
                     });
 
@@ -229,6 +249,31 @@ export default function SeatLayout() {
             .catch(() => setFarePerPerson(500));
     }, [trainNumber, classType, source, destination]);
 
+    const refreshUnavailableSeats = async () => {
+        try {
+            const { bookedSeatIds, blockedSeatIds } = await fetchUnavailableSeatIds();
+            const unavailableSeatIds = new Set([...bookedSeatIds, ...blockedSeatIds]);
+            setLayoutData(prev => {
+                if (!prev?.coaches) return prev;
+                return {
+                    ...prev,
+                    coaches: prev.coaches.map(c => {
+                        const cid = c.coachId || c.coachNumber;
+                        return {
+                            ...c,
+                            seats: c.seats.map(seat => ({
+                                ...seat,
+                                isBooked: Boolean(seat.baseBooked) || unavailableSeatIds.has(`${cid}-${seat.seatNumber}`)
+                            }))
+                        };
+                    })
+                };
+            });
+        } catch (e) {
+            console.error("Could not refresh booked seats", e);
+        }
+    };
+
     const isUnreservedClass = ['GN', 'GS', 'UR', '2S'].includes(classType) || classType.toLowerCase().includes('general');
 
     // ── Seat Blocking Cleanup ─────────────────────────────────────────────────
@@ -263,7 +308,7 @@ export default function SeatLayout() {
         if (isSelected) {
             try {
                 // Optimistically update UI
-                setSelectedSeats(selectedSeats.filter(s => s.uid !== seatId));
+                setSelectedSeats(prev => prev.filter(s => s.uid !== seatId));
                 // Call backend to unblock
                 await api.unblockSeat({ trainNumber, journeyDate, seatId, source, destination });
             } catch (err) {
@@ -273,24 +318,52 @@ export default function SeatLayout() {
             if (selectedSeats.length >= passengerCount) return;
             try {
                 // Call backend to block FIRST
-                await api.blockSeat({ trainNumber, journeyDate, seatId, source, destination });
+                const blockRes = await api.blockSeat({ trainNumber, journeyDate, seatId, source, destination });
                 // If successful, update UI
-                setSelectedSeats([...selectedSeats, {
+                setSelectedSeats(prev => [...prev, {
                     uid: seatId,
                     seatNumber: seat.seatNumber,
                     coachId,
-                    berthType: seat.berthType
+                    berthType: seat.berthType,
+                    holdExpiresAt: blockRes?.data?.expires_at || new Date(Date.now() + 5 * 60 * 1000).toISOString()
                 }]);
             } catch (err) {
-                alert("This seat was just held by another user. Please try another seat.");
-                // Optionally refresh layout to show new bookings/blocks
-                setLoading(true); 
-                // Re-trigger the main fetch effect
-                const fetchData = async () => { /* ... simplified refresh ... */ };
-                window.location.reload(); // Quickest way to sync state for now
+                if (err?.status === 409) {
+                    setLayoutData(prev => {
+                        if (!prev?.coaches) return prev;
+                        return {
+                            ...prev,
+                            coaches: prev.coaches.map(c => ({
+                                ...c,
+                                seats: c.seats.map(s =>
+                                    `${c.coachId || c.coachNumber}-${s.seatNumber}` === seatId
+                                        ? { ...s, isBooked: true }
+                                        : s
+                                )
+                            }))
+                        };
+                    });
+                } else {
+                    alert("Unable to hold seat right now. Please check your connection and try again.");
+                }
+                await refreshUnavailableSeats();
             }
         }
     };
+
+    // Keep hold states fresh: remove expired local selections and refresh unavailable seats periodically.
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const now = Date.now();
+            setSelectedSeats(prev => prev.filter(s => {
+                if (!s.holdExpiresAt) return true;
+                return new Date(s.holdExpiresAt).getTime() > now;
+            }));
+            refreshUnavailableSeats();
+        }, 15000);
+
+        return () => clearInterval(interval);
+    }, [trainNumber, journeyDate, source, destination, isTrainSearchMode]);
 
     const handleProceed = () => {
         if (!auth.currentUser) {
