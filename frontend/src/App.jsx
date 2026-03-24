@@ -12,6 +12,7 @@ import Auth from "./components/Auth";
 import Support from "./pages/Support";
 import Results from "./pages/Results";
 import Reviews from "./components/Reviews";
+import SmartRailChatbot from "./components/SmartRailChatbot";
 import PassengerDetails from "./pages/PassengerDetails";
 
 import AdminDashboard from "./pages/AdminDashboard";
@@ -389,6 +390,7 @@ export default function App() {
               </Routes>
             </main>
           </div>
+          {!location.pathname.startsWith('/admin') && <SmartRailChatbot />}
           {!location.pathname.startsWith('/admin') && (isMiniFooterPage ? <MiniFooter /> : <Footer />)}
         </>
       )}
