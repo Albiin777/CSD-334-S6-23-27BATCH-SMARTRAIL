@@ -44,6 +44,7 @@ import AboutSection from "./components/AboutSection";
 import { auth, db } from "./utils/firebaseClient";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
+import SmartRailChatbot from "./components/SmartRailChatbot";
 /* ==================== Icon Components ==================== */
 function SearchIcon({ size = 20, className = "" }) {
   return (
@@ -311,6 +312,11 @@ export default function App() {
     // 3. Removed global reload redirect so that specific pages can handle their own recovery / session storage via React Router state.
   }, []);
 
+  // Scroll to top on route navigation so pages like My Account open from the top section.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [location.pathname]);
+
   const isTTEPage = location.pathname.startsWith('/tte');
 
   return (
@@ -385,6 +391,7 @@ export default function App() {
             </main>
           </div>
           {!location.pathname.startsWith('/admin') && (isMiniFooterPage ? <MiniFooter /> : <Footer />)}
+          {!location.pathname.startsWith('/admin') && <SmartRailChatbot />}
         </>
       )}
     </div>
