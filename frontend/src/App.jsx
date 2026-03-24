@@ -44,7 +44,6 @@ import AboutSection from "./components/AboutSection";
 import { auth, db } from "./utils/firebaseClient";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import SmartRailChatbot from "./components/SmartRailChatbot";
 /* ==================== Icon Components ==================== */
 function SearchIcon({ size = 20, className = "" }) {
   return (
@@ -391,7 +390,6 @@ export default function App() {
             </main>
           </div>
           {!location.pathname.startsWith('/admin') && (isMiniFooterPage ? <MiniFooter /> : <Footer />)}
-          {!location.pathname.startsWith('/admin') && <SmartRailChatbot />}
         </>
       )}
     </div>
