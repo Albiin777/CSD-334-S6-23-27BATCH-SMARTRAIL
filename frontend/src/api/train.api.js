@@ -178,11 +178,11 @@ const api = {
         return await res.json();
     },
 
-    submitReview: async (trainNumber, rating, comment, userId) => {
+    submitReview: async (trainNumber, rating, comment, userId, userName, categoryRatings, images) => {
         const res = await fetch(`${API_BASE_URL}/reviews/${trainNumber}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rating, comment, userId })
+            body: JSON.stringify({ rating, comment, userId, userName, categoryRatings, images })
         });
         if (!res.ok) {
             const err = await res.json();

@@ -75,7 +75,7 @@ const doSegmentsOverlap = (reqFrom, reqTo, existingFrom, existingTo) => {
 // ---------------------------------------------
 // CORE SERVICE: Book a Ticket (handles CNF, RAC, WL logic)
 // ---------------------------------------------
-const bookTicket = async (trainNumber, source, destination, journeyDate, classCode, passengers, trainSchedule, userId = null) => {
+const bookTicket = async (trainNumber, source, destination, journeyDate, classCode, passengers, trainSchedule, userId = null, totalFare = null) => {
 
     // 1. Validate Input
     if (!passengers || passengers.length === 0) throw new Error('No passengers provided');
@@ -207,6 +207,7 @@ const bookTicket = async (trainNumber, source, destination, journeyDate, classCo
         toIndex,
         user_id: userId,
         passengers: passengerRecords,
+        totalFare,
         created_at: new Date().toISOString()
     };
 

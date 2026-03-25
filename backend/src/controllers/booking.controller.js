@@ -4,7 +4,7 @@ import { sendBookingConfirmationEmail } from '../services/email.service.js';
 
 const createBookingHandler = async (req, res) => {
     try {
-        const { trainNumber, journeyDate, classCode, source, destination, passengers } = req.body;
+        const { trainNumber, journeyDate, classCode, source, destination, passengers, totalFare } = req.body;
 
         if (!trainNumber || !journeyDate || !classCode || !source || !destination || !passengers) {
             return res.status(400).json({ error: "Missing required booking details." });
@@ -54,7 +54,8 @@ const createBookingHandler = async (req, res) => {
             classCode, 
             passengers, 
             trainSchedule, 
-            userId
+            userId,
+            totalFare
         );
 
         // --- Send Email Confirmation if logged in ---

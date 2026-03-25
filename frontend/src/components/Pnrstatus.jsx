@@ -44,6 +44,22 @@ export default function PNRStatus() {
     try {
       const data = await api.getBookingStatus(pnr);
 
+      let calculatedFare = data.totalFare;
+      if (!calculatedFare && data.trainNumber && data.classCode) {
+        try {
+          const fareData = await api.getFare(data.trainNumber, data.source, data.destination);
+          if (fareData && fareData.fares && fareData.fares[data.classCode]) {
+             const perPersonFare = fareData.fares[data.classCode];
+             const passengersCount = data.passengers ? data.passengers.length : 1;
+             const baseTotal = perPersonFare * passengersCount;
+             const serviceTax = Math.round(baseTotal * 0.05);
+             calculatedFare = baseTotal + serviceTax + 20;
+          }
+        } catch (e) {
+             console.error("Failed to calculate fallback fare", e);
+        }
+      }
+
       // Transform API data to Component format
       const transformedData = {
         pnr: data.pnr,
@@ -58,7 +74,7 @@ export default function PNRStatus() {
         arrivalDate: new Date(data.journeyDate).toLocaleDateString() + ", " + (data.arrivalTime || "00:00"), // Fallback same day
         duration: data.duration || "N/A",
         distance: "N/A", // Calculated on backend ideally
-        totalFare: "₹--", // Not in basic booking model yet
+        totalFare: calculatedFare ? `₹${calculatedFare}` : "₹--", // Retrieved from db
         chartStatus: "Prepared",
         passengers: data.passengers.map(p => ({
           name: p.name,

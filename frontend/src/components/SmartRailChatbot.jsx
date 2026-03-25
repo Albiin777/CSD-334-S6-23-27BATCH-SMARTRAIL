@@ -3,7 +3,7 @@ import "./SmartRailChatbot.css";
 
 const WEBHOOK_URL =
   import.meta.env.VITE_RASA_WEBHOOK_URL ||
-  "http://localhost:5005/webhooks/rest/webhook";
+  "https://rasa-server-production-bb81.up.railway.app/webhooks/rest/webhook";
 
 function toBotMessages(payload) {
   if (!Array.isArray(payload)) return [];
@@ -19,6 +19,7 @@ export default function SmartRailChatbot() {
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState([]);
+  const [isBotTyping, setIsBotTyping] = useState(false);
   const endRef = useRef(null);
 
   useEffect(() => {
@@ -30,6 +31,7 @@ export default function SmartRailChatbot() {
     if (!trimmed) return;
 
     setChat((prev) => [...prev, { sender: "user", text: userLabel }]);
+    setIsBotTyping(true);
 
     try {
       const response = await fetch(WEBHOOK_URL, {
@@ -57,11 +59,21 @@ export default function SmartRailChatbot() {
       }
 
       setChat((prev) => [...prev, ...botMessages]);
-    } catch {
+    } catch (err) {
+      const errorMsg = err?.message || "";
+      const isWakingUp = errorMsg.includes("502") || errorMsg.includes("503");
+
       setChat((prev) => [
         ...prev,
-        { sender: "bot", text: "SmartRail assistant is currently unreachable." },
+        {
+          sender: "bot",
+          text: isWakingUp 
+            ? "The Server is waking up from sleep mode (this takes ~30 seconds). Please ask your question again in a moment!"
+            : "SmartRail assistant is currently unreachable. If the server is just waking up, please wait a few seconds and try again.",
+        },
       ]);
+    } finally {
+      setIsBotTyping(false);
     }
   };
 
@@ -129,6 +141,17 @@ export default function SmartRailChatbot() {
                 </div>
               </div>
             ))}
+
+            {isBotTyping && (
+              <div className="sr-chat-row bot">
+                <div className="sr-bubble bot sr-typing-indicator">
+                  <div className="sr-typing-dot"></div>
+                  <div className="sr-typing-dot"></div>
+                  <div className="sr-typing-dot"></div>
+                </div>
+              </div>
+            )}
+
             <div ref={endRef} />
           </div>
 
@@ -142,10 +165,11 @@ export default function SmartRailChatbot() {
                 }
               }}
               className="sr-chatbot-input"
-              placeholder="Type your message..."
+              placeholder="Ask anything..."
               aria-label="Type a chatbot message"
+              disabled={isBotTyping}
             />
-            <button type="button" onClick={handleSend} className="sr-chatbot-send">
+            <button type="button" onClick={handleSend} className="sr-chatbot-send" disabled={isBotTyping}>
               Send
             </button>
           </div>

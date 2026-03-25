@@ -133,15 +133,24 @@ export default function Support({ autoScroll = true }) {
 
   useEffect(() => {
     const handlePopState = () => {
-      // If back button is pressed while modal/confirm is open, close them
       if (selectedComplaint) {
         setSelectedComplaint(null);
         setConfirmDeleteId(null);
       }
     };
-
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
+  }, [selectedComplaint]);
+
+  useEffect(() => {
+    if (selectedComplaint) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [selectedComplaint]);
 
   const fetchHistory = async () => {
@@ -315,7 +324,7 @@ export default function Support({ autoScroll = true }) {
       setSubmissionStatus("uploading");
       setErrorMessage("");
 
-      const imageUrls = await uploadImages(user.id);
+      const imageUrls = await uploadImages(user.uid);
 
       setSubmissionStatus("submitting");
 
@@ -614,10 +623,10 @@ export default function Support({ autoScroll = true }) {
       {/* DETAIL MODAL */}
       {
         selectedComplaint && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-[60] flex items-start justify-center py-12 px-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
             <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
               {/* Modal Header */}
-              <div className="p-6 border-b border-[#333] flex items-start justify-between">
+              <div className="p-5 border-b border-[#333] flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-3 mb-2">
                     <span className={`w-2 h-2 rounded-full ${selectedComplaint.status === 'resolved' ? 'bg-green-500' :

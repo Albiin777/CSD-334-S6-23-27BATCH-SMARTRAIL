@@ -12,15 +12,15 @@ router.get('/admin/all', authenticateToken, async (req, res) => {
     try {
         const { train } = req.query;
 
-        let queryRef = adminDb.collection('complaints').orderBy('created_at', 'desc');
+        let queryRef = adminDb.collection('complaints');
         if (train) {
             queryRef = adminDb.collection('complaints')
-                .where('train_number', '==', String(train))
-                .orderBy('created_at', 'desc');
+                .where('train_number', '==', String(train));
         }
 
         const snap = await queryRef.get();
-        const complaints = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const complaints = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         res.json(complaints);
     } catch (error) {
         console.error('Error fetching all complaints (admin):', error);
@@ -38,13 +38,12 @@ router.get('/', authenticateToken, async (req, res) => {
 
         const complaintsSnapshot = await adminDb.collection('complaints')
             .where('user_id', '==', user.id)
-            .orderBy('created_at', 'desc')
             .get();
 
         const complaints = complaintsSnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
-        }));
+        })).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
         res.json(complaints);
     } catch (error) {
@@ -108,13 +107,12 @@ router.get('/:complaintId/replies', authenticateToken, async (req, res) => {
         // Fetch all replies for this complaint
         const repliesSnapshot = await adminDb.collection('complaint_replies')
             .where('complaint_id', '==', complaintId)
-            .orderBy('created_at', 'asc')
             .get();
 
         const replies = repliesSnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
-        }));
+        })).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
         console.log('✅ Fetched', replies.length, 'replies');
         res.json({ replies });
@@ -241,10 +239,10 @@ router.get('/:complaintId/replies/admin', authenticateToken, async (req, res) =>
 
         const repliesSnapshot = await adminDb.collection('complaint_replies')
             .where('complaint_id', '==', complaintId)
-            .orderBy('created_at', 'asc')
             .get();
 
-        const replies = repliesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const replies = repliesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+            .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
         res.json({ replies });
     } catch (error) {
         console.error('Error fetching admin replies:', error);

@@ -191,13 +191,26 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const [isPaymentSuccess, setIsPaymentSuccess] = useState(false);
+
+  useEffect(() => {
+    const handleSuccess = () => setIsPaymentSuccess(true);
+    window.addEventListener('payment-success', handleSuccess);
+    return () => window.removeEventListener('payment-success', handleSuccess);
+  }, []);
+
+  useEffect(() => {
+    if (!location.pathname.startsWith('/payment')) {
+      setIsPaymentSuccess(false);
+    }
+  }, [location.pathname]);
   const isMiniFooterPage =
-    location.pathname.startsWith('/seat-layout') ||
+    (location.pathname.startsWith('/seat-layout') ||
     location.pathname.startsWith('/payment') ||
     location.pathname.startsWith('/results') ||
     location.pathname.startsWith('/passenger-details') ||
     location.pathname.startsWith('/admin') ||
-    location.pathname.startsWith('/tte');
+    location.pathname.startsWith('/tte')) && !isPaymentSuccess;
 
   // Pages that manage their own top spacing (no global pt-[70px] needed)
   const isNoPaddingPage =
@@ -390,7 +403,8 @@ export default function App() {
               </Routes>
             </main>
           </div>
-          {!location.pathname.startsWith('/admin') && (isMiniFooterPage ? <MiniFooter /> : <Footer />)}
+          {/* Hide footer on payment success screen */}
+          {!location.pathname.startsWith('/admin') && !isPaymentSuccess && (isMiniFooterPage ? <MiniFooter /> : <Footer />)}
           {location.pathname === '/' && <SmartRailChatbot />}
         </>
       )}

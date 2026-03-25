@@ -14,10 +14,10 @@ export default function PNRResult({ pnrData, onReset }) {
       </h2>
 
       {/* TICKET CONTAINER - Dark Solid */}
-      <div className="bg-[#2B2B2B] border border-[#B3B3B3]/20 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row min-h-[400px]">
+      <div className="bg-[#2B2B2B] border border-[#B3B3B3]/20 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row min-h-[320px]">
 
         {/* === LEFT DIVISION (MAIN JOURNEY) === */}
-        <div className="flex-1 p-6 md:p-8 relative text-white">
+        <div className="flex-1 p-5 md:p-6 relative text-white">
 
           {/* Header */}
           <div className="flex justify-between items-start mb-6">
@@ -103,15 +103,15 @@ export default function PNRResult({ pnrData, onReset }) {
         </div>
 
         {/* === RIGHT DIVISION (SIDE INFO) === */}
-        <div className="w-full md:w-[320px] bg-[#FFFFFF]/5 p-6 md:p-8 flex flex-col justify-between md:border-l border-white/5 text-white">
+        <div className="w-full md:w-[320px] bg-[#FFFFFF]/5 p-5 md:p-6 flex flex-col justify-between md:border-l border-white/5 text-white">
 
           <div>
 <div className="mb-4">
                 <span className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">PNR Number</span>
                 <p className="text-3xl font-black text-white tracking-[0.1em] mt-1 [text-shadow:0_0_20px_rgba(255,255,255,0.1)]">{pnrData.pnr}</p>
               </div>
-              <div className="mb-8 flex justify-center bg-white p-3 rounded-xl max-w-fit mx-auto md:mx-0">
-                <QRCode value={pnrData.pnr} size={120} level="M" />
+              <div className="mb-5 flex justify-center bg-white p-2 rounded-xl max-w-fit mx-auto md:mx-0">
+                <QRCode value={pnrData.pnr} size={100} level="M" />
             </div>
 
             <div className="space-y-4">
@@ -130,7 +130,7 @@ export default function PNRResult({ pnrData, onReset }) {
             </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-dashed border-white/10">
+          <div className="mt-5 pt-5 border-t border-dashed border-white/10">
             <button
               onClick={onReset}
               className="w-full py-3 bg-white text-black font-black rounded-xl hover:bg-gray-200 transition-all text-xs uppercase tracking-[0.15em] hover:scale-[1.02] active:scale-[0.98]"

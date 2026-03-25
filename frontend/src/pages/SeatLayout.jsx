@@ -105,6 +105,8 @@ export default function SeatLayout() {
     const [layoutData, setLayoutData] = useState(null);
     const [selectedCoachId, setSelectedCoachId] = useState(null);
     const [selectedSeats, setSelectedSeats] = useState([]);
+    // Track locally held seats to prevent UI flicker
+    const [locallyHeldSeats, setLocallyHeldSeats] = useState([]);
     const [trainDetails, setTrainDetails] = useState(null);
     const [passengerCount, setPassengerCount] = useState(Number(searchParams.get("passengers")) || 1);
     const [isEditingPassengers, setIsEditingPassengers] = useState(false);
@@ -117,20 +119,43 @@ export default function SeatLayout() {
         let bookedSeatIds = [];
         let blockedSeatIds = [];
 
+        // Defensive: Ensure required params are present
+        if (!trainNumber || !journeyDate) {
+            console.error("Missing trainNumber or journeyDate for seat block/booked seats fetch", { trainNumber, journeyDate });
+            return { bookedSeatIds, blockedSeatIds };
+        }
         if (isTrainSearchMode) return { bookedSeatIds, blockedSeatIds };
 
         try {
             const bookingRes = await api.getBookedSeats(trainNumber, journeyDate, source, destination);
             bookedSeatIds = bookingRes?.bookedSeats || [];
         } catch (e) {
-            console.error("Could not fetch bookings", e);
+            if (e.response) {
+                try {
+                    const errText = await e.response.text();
+                    console.error("Could not fetch bookings", e, errText);
+                } catch (parseErr) {
+                    console.error("Could not fetch bookings", e);
+                }
+            } else {
+                console.error("Could not fetch bookings", e);
+            }
         }
 
         try {
             const blockRes = await api.getActiveSeatBlocks(trainNumber, journeyDate);
             blockedSeatIds = blockRes?.blockedSeats || [];
         } catch (e) {
-            console.error("Could not fetch active seat blocks", e);
+            if (e.response) {
+                try {
+                    const errText = await e.response.text();
+                    console.error("Could not fetch active seat blocks", e, errText);
+                } catch (parseErr) {
+                    console.error("Could not fetch active seat blocks", e);
+                }
+            } else {
+                console.error("Could not fetch active seat blocks", e);
+            }
         }
 
         return { bookedSeatIds, blockedSeatIds };
@@ -261,10 +286,17 @@ export default function SeatLayout() {
                         const cid = c.coachId || c.coachNumber;
                         return {
                             ...c,
-                            seats: c.seats.map(seat => ({
-                                ...seat,
-                                isBooked: Boolean(seat.baseBooked) || unavailableSeatIds.has(`${cid}-${seat.seatNumber}`)
-                            }))
+                            seats: c.seats.map(seat => {
+                                const seatUid = `${cid}-${seat.seatNumber}`;
+                                // If seat is locally held, do not override with backend state
+                                if (locallyHeldSeats.includes(seatUid)) {
+                                    return { ...seat, isBooked: false };
+                                }
+                                return {
+                                    ...seat,
+                                    isBooked: Boolean(seat.baseBooked) || unavailableSeatIds.has(seatUid)
+                                };
+                            })
                         };
                     })
                 };
@@ -309,13 +341,20 @@ export default function SeatLayout() {
             try {
                 // Optimistically update UI
                 setSelectedSeats(prev => prev.filter(s => s.uid !== seatId));
+                setLocallyHeldSeats(prev => prev.filter(id => id !== seatId));
                 // Call backend to unblock
                 await api.unblockSeat({ trainNumber, journeyDate, seatId, source, destination });
+                // After unblocking, refresh seat state to ensure UI is correct
+                await refreshUnavailableSeats();
             } catch (err) {
                 console.error("Failed to unblock seat", err);
+                // Still refresh seat state in case of error
+                await refreshUnavailableSeats();
             }
         } else {
             if (selectedSeats.length >= passengerCount) return;
+            // Optimistically mark as locally held
+            setLocallyHeldSeats(prev => [...prev, seatId]);
             try {
                 // Call backend to block FIRST
                 const blockRes = await api.blockSeat({ trainNumber, journeyDate, seatId, source, destination });
@@ -328,6 +367,8 @@ export default function SeatLayout() {
                     holdExpiresAt: blockRes?.data?.expires_at || new Date(Date.now() + 5 * 60 * 1000).toISOString()
                 }]);
             } catch (err) {
+                // Remove from locally held if failed
+                setLocallyHeldSeats(prev => prev.filter(id => id !== seatId));
                 if (err?.status === 409) {
                     setLayoutData(prev => {
                         if (!prev?.coaches) return prev;
@@ -359,11 +400,17 @@ export default function SeatLayout() {
                 if (!s.holdExpiresAt) return true;
                 return new Date(s.holdExpiresAt).getTime() > now;
             }));
+            setLocallyHeldSeats(prev => prev.filter(seatId => {
+                const found = selectedSeats.find(s => s.uid === seatId);
+                if (!found) return false;
+                if (!found.holdExpiresAt) return true;
+                return new Date(found.holdExpiresAt).getTime() > now;
+            }));
             refreshUnavailableSeats();
         }, 15000);
 
         return () => clearInterval(interval);
-    }, [trainNumber, journeyDate, source, destination, isTrainSearchMode]);
+    }, [trainNumber, journeyDate, source, destination, isTrainSearchMode, selectedSeats]);
 
     const handleProceed = () => {
         if (!auth.currentUser) {

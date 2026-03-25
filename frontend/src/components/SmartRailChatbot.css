@@ -132,6 +132,29 @@
   cursor: pointer;
 }
 
+.sr-typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+}
+
+.sr-typing-dot {
+  width: 6px;
+  height: 6px;
+  background-color: #94a3b8;
+  border-radius: 50%;
+  animation: typingBounce 1.4s infinite ease-in-out both;
+}
+
+.sr-typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.sr-typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes typingBounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+
 .sr-chatbot-input-wrap {
   display: flex;
   gap: 8px;

@@ -130,6 +130,7 @@ export default function PaymentGateway() {
             setBookingResult(result);
             setProcessing(false);
             setSuccess(true);
+            window.dispatchEvent(new CustomEvent('payment-success'));
 
             // Wait for the background animation to expand before fading in the ticket card
             setTimeout(() => {
@@ -210,6 +211,8 @@ export default function PaymentGateway() {
 
     // Success Screen
     if (success) {
+        // Set a global flag so App.jsx can hide the footer
+        window.__SMARTRAIL_PAYMENT_SUCCESS = true;
         return (
             <div className="min-h-screen relative flex items-center justify-center overflow-hidden" style={{ backgroundColor: '#0f172a' }}>
                 <style>
@@ -361,6 +364,8 @@ export default function PaymentGateway() {
             </div>
         );
     }
+    // Reset the global flag if not on success screen
+    if (window.__SMARTRAIL_PAYMENT_SUCCESS) window.__SMARTRAIL_PAYMENT_SUCCESS = false;
 
     // Processing Overlay
     if (processing) {

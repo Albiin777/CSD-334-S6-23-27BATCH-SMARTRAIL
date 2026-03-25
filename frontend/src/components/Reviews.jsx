@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Star, Search, ThumbsUp, CheckCircle2, Plus, X, ThumbsDown, Pencil, Image as ImageIcon, ChevronLeft, ChevronRight, Inbox } from "lucide-react";
-import { auth } from "../utils/firebaseClient";
+import { auth, db } from "../utils/firebaseClient";
 import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import api from "../api/train.api";
 
 export default function Reviews() {
@@ -9,14 +10,18 @@ export default function Reviews() {
     const [selectedImageIndex, setSelectedImageIndex] = useState(0);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [trainName, setTrainName] = useState("");
+    const [trainNumber, setTrainNumber] = useState("");
     const [hasSearched, setHasSearched] = useState(false);
     const [startAnimation, setStartAnimation] = useState(false);
     const [user, setUser] = useState(null);
+    const [resolvedUserName, setResolvedUserName] = useState("");
     const [expandedCards, setExpandedCards] = useState({});
     const [animStep, setAnimStep] = useState(0); // 0=hidden, 1=header in, 2=content in
     const [isLoading, setIsLoading] = useState(false);
     const [trainSuggestions, setTrainSuggestions] = useState([]);
     const [showTrainSuggestions, setShowTrainSuggestions] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [uploadStatus, setUploadStatus] = useState("");
 
     const searchRef = useRef(null);
     const trainDebounceRef = useRef(null);
@@ -24,10 +29,22 @@ export default function Reviews() {
     const toggleCard = (id) => setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             setUser(currentUser);
+            if (currentUser) {
+                // Resolve display name from Firestore profile (same as MyAccount)
+                let name = currentUser.displayName || currentUser.email?.split('@')[0] || "";
+                try {
+                    const profileDoc = await getDoc(doc(db, 'profiles', currentUser.uid));
+                    if (profileDoc.exists()) {
+                        name = profileDoc.data().full_name || name;
+                    }
+                } catch (e) { /* silent */ }
+                setResolvedUserName(name);
+            } else {
+                setResolvedUserName("");
+            }
         });
-
         return () => unsubscribe();
     }, []);
 
@@ -43,6 +60,7 @@ export default function Reviews() {
 
     const [reviews, setReviews] = useState([]);
     const [averageRating, setAverageRating] = useState(0);
+    const [categoryAverages, setCategoryAverages] = useState({ cleanliness: 0, safety: 0, comfort: 0, schedule: 0, staff: 0 });
     const [isNotFound, setIsNotFound] = useState(false);
     const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
@@ -93,8 +111,10 @@ export default function Reviews() {
             if (!searchResults || searchResults.length === 0) {
                 setIsNotFound(true);
                 setTrainName(query);
+                setTrainNumber("");
                 setReviews([]);
                 setAverageRating(0);
+                setCategoryAverages({ cleanliness: 0, safety: 0, comfort: 0, schedule: 0, staff: 0 });
                 setTimeout(() => setAnimStep(1), 60);
                 setTimeout(() => setAnimStep(2), 240);
                 setIsLoading(false);
@@ -105,6 +125,7 @@ export default function Reviews() {
             const bestMatch = searchResults[0];
             const fullDisplayName = `${bestMatch.trainName} (${bestMatch.trainNumber})`;
             setTrainName(fullDisplayName);
+            setTrainNumber(bestMatch.trainNumber);
 
             // 2. Fetch reviews for this specific train number
             const data = await api.getReviews(bestMatch.trainNumber);
@@ -115,28 +136,35 @@ export default function Reviews() {
             if (data && data.reviews) {
                 const mappedReviews = data.reviews.map((r, i) => ({
                     id: r.id,
-                    name: "Passenger",
+                    name: r.userName || "Passenger",
                     date: new Date(r.created_at).toLocaleDateString(),
                     rating: r.rating,
                     text: r.comment,
-                    reviewImages: [],
+                    reviewImages: r.reviewImages || [],
                     image: "https://randomuser.me/api/portraits/lego/" + ((i % 9) + 1) + ".jpg",
                     verified: true,
                     likes: 0,
                     dislikes: 0,
                     userAction: null,
-                    categoryRatings: { cleanliness: r.rating, safety: r.rating, comfort: r.rating, schedule: r.rating, staff: r.rating }
+                    categoryRatings: r.categoryRatings || { cleanliness: r.rating, safety: r.rating, comfort: r.rating, schedule: r.rating, staff: r.rating }
                 }));
                 setReviews(mappedReviews);
                 setAverageRating(data.averageRating || 0);
+                if (data.categoryAverages) {
+                    setCategoryAverages(data.categoryAverages);
+                }
             } else {
                 setReviews([]);
                 setAverageRating(0);
+                setCategoryAverages({ cleanliness: 0, safety: 0, comfort: 0, schedule: 0, staff: 0 });
             }
         } catch (err) {
             console.error("Failed to load reviews:", err);
             setReviews([]);
             setAverageRating(0);
+            // Even if it fails, reveal the UI so the user isn't looking at a ghost screen
+            setTimeout(() => setAnimStep(1), 60);
+            setTimeout(() => setAnimStep(2), 240);
         } finally {
             setIsLoading(false);
         }
@@ -159,21 +187,25 @@ export default function Reviews() {
 
     useEffect(() => {
         if (isModalOpen || isLightboxOpen) {
+            const scrollBarWidth = window.innerWidth - document.documentElement.clientWidth;
             document.body.style.overflow = 'hidden';
+            document.body.style.paddingRight = `${scrollBarWidth}px`;
         } else {
             document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
         }
         return () => {
             document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
         };
     }, [isModalOpen, isLightboxOpen]);
 
     const ratingsList = [
-        { label: "Cleanliness", score: averageRating || 0, color: "bg-emerald-500" },
-        { label: "Safety", score: averageRating || 0, color: "bg-blue-500" },
-        { label: "Comfort", score: averageRating || 0, color: "bg-amber-500" },
-        { label: "Schedule", score: averageRating || 0, color: "bg-violet-500" },
-        { label: "Staff", score: averageRating || 0, color: "bg-rose-500" },
+        { label: "Cleanliness", score: categoryAverages.cleanliness || 0, color: "bg-emerald-500" },
+        { label: "Safety", score: categoryAverages.safety || 0, color: "bg-blue-500" },
+        { label: "Comfort", score: categoryAverages.comfort || 0, color: "bg-amber-500" },
+        { label: "Schedule", score: categoryAverages.schedule || 0, color: "bg-violet-500" },
+        { label: "Staff", score: categoryAverages.staff || 0, color: "bg-rose-500" },
     ];
 
     const getRatingColor = (score) => {
@@ -197,30 +229,94 @@ export default function Reviews() {
         }));
     };
 
+    const uploadReviewImages = async () => {
+        const files = newReview.reviewImages.filter(f => f instanceof File);
+        if (files.length === 0) return [];
+        
+        setUploadStatus(`Processing ${files.length} images...`);
+        const totalFiles = files.length;
+        
+        const processPromises = files.map((file, idx) => {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.src = e.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 400; // Small size for direct DB storage
+                        const MAX_HEIGHT = 400;
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > height) {
+                            if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+                        } else {
+                            if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // Compress to 0.6 quality to keep it tiny for Firestore docs
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                        console.log(`[Image ${idx}] Compressed to ${Math.round(dataUrl.length / 1024)}KB`);
+                        setUploadStatus(`Processed ${idx + 1}/${totalFiles}`);
+                        resolve(dataUrl);
+                    };
+                };
+            });
+        });
+        
+        return await Promise.all(processPromises);
+    };
+
     const handleSubmitReview = async (e) => {
         e.preventDefault();
-        if (!user || !user.id) { alert("Please login to submit a review."); return; }
+        if (!user || !user.uid) { alert("Please login to submit a review."); return; }
         if (!newReview.name.trim() || !newReview.text.trim()) return;
 
         const avgRating = Math.round((Object.values(newReview.ratings).reduce((a, b) => a + b, 0) / 5) * 10) / 10;
-
+        setIsSubmitting(true);
+        
         try {
-            await api.submitReview(trainName, Math.round(avgRating), newReview.text, user.id);
-            const data = await api.getReviews(trainName);
+            console.log("🚀 Starting specialized review submission...");
+            // Process images to small Base64 locally (bypassing cloud storage issues)
+            const imageUrls = await uploadReviewImages();
+            
+            await api.submitReview(trainNumber, Math.round(avgRating), newReview.text, user.uid, newReview.name, newReview.ratings, imageUrls);
+            console.log("✨ Direct submission successful!");
+            console.log("✨ Backend submission successful!");
+            
+            const data = await api.getReviews(trainNumber);
             if (data && data.reviews) {
                 setReviews(data.reviews.map((r, i) => ({
-                    id: r.id, name: "Passenger", date: new Date(r.created_at).toLocaleDateString(),
-                    rating: r.rating, text: r.comment, reviewImages: [],
+                    id: r.id,
+                    name: r.userName || "Passenger",
+                    date: new Date(r.created_at).toLocaleDateString(),
+                    rating: r.rating, text: r.comment, 
+                    reviewImages: r.reviewImages || [],
                     image: "https://randomuser.me/api/portraits/lego/" + ((i % 9) + 1) + ".jpg",
                     verified: true, likes: 0, dislikes: 0, userAction: null,
-                    categoryRatings: { cleanliness: r.rating, safety: r.rating, comfort: r.rating, schedule: r.rating, staff: r.rating }
+                    categoryRatings: r.categoryRatings || { cleanliness: r.rating, safety: r.rating, comfort: r.rating, schedule: r.rating, staff: r.rating }
                 })));
+                setAverageRating(data.averageRating || 0);
+                if (data.categoryAverages) {
+                    setCategoryAverages(data.categoryAverages);
+                }
             }
-            setNewReview({ name: "", rating: 5, text: "", reviewImages: [], ratings: { cleanliness: 5, safety: 5, comfort: 5, schedule: 5, staff: 5 } });
+            setNewReview({ name: resolvedUserName || "", rating: 5, text: "", reviewImages: [], ratings: { cleanliness: 5, safety: 5, comfort: 5, schedule: 5, staff: 5 } });
             setIsModalOpen(false);
         } catch (err) {
-            console.error("Failed to submit review", err);
-            alert(err.message || "Failed to submit review");
+            if (err.message === "POST_CANCELLED") return; 
+            console.error("❌ Submission failed!", err);
+            alert("Submission error: " + (err.message || "Please check your internet connection."));
+        } finally {
+            setIsSubmitting(false);
+            setUploadStatus("");
         }
     };
 
@@ -398,7 +494,7 @@ export default function Reviews() {
                                 )}
                             </h3>
                             {user && !isNotFound && (
-                                <button onClick={() => { setNewReview(prev => ({ ...prev, name: user.user_metadata?.full_name || user.email?.split('@')[0] || "" })); setIsModalOpen(true); }}
+                                <button onClick={() => { setNewReview(prev => ({ ...prev, name: resolvedUserName || user?.displayName || user?.email?.split('@')[0] || "" })); setIsModalOpen(true); }}
                                     className="flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-200 text-black rounded-lg font-bold text-[10px] uppercase transition-all shadow-lg active:scale-95">
                                     <Plus className="w-3 h-3" /> Add Review
                                 </button>
@@ -515,8 +611,13 @@ export default function Reviews() {
                                 <form onSubmit={handleSubmitReview} className="space-y-6">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Your Name</label>
-                                        <input type="text" value={newReview.name} readOnly={!!user} onChange={(e) => !user && setNewReview({ ...newReview, name: e.target.value })}
-                                            className={`w-full bg-transparent border border-white/20 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-white transition-colors ${user ? 'opacity-60 cursor-not-allowed' : ''}`} placeholder="Enter your name" />
+                                        <input
+                                            type="text"
+                                            value={newReview.name}
+                                            onChange={(e) => setNewReview({ ...newReview, name: e.target.value })}
+                                            className="w-full bg-transparent border border-white/20 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-white transition-colors"
+                                            placeholder="Enter your name"
+                                        />
                                     </div>
                                     <div className="space-y-4 bg-white/5 p-4 rounded-xl border border-white/5">
                                         <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-white/10 pb-2">Rate Categories</label>
@@ -544,28 +645,51 @@ export default function Reviews() {
                                         <div className="flex flex-wrap gap-2">
                                             {newReview.reviewImages.map((img, idx) => (
                                                 <div key={idx} className="relative w-20 h-20 rounded-xl overflow-hidden group border border-white/10">
-                                                    <img src={img} alt={`Preview ${idx}`} className="w-full h-full object-cover" />
-                                                    <button type="button" onClick={() => setNewReview({ ...newReview, reviewImages: newReview.reviewImages.filter((_, i) => i !== idx) })}
-                                                        className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
-                                                        <X className="w-6 h-6" />
-                                                    </button>
+                                                    <img src={img instanceof File ? URL.createObjectURL(img) : img} alt={`Preview ${idx}`} className="w-full h-full object-cover" />
+                                                    {!isSubmitting && (
+                                                        <button type="button" onClick={() => setNewReview({ ...newReview, reviewImages: newReview.reviewImages.filter((_, i) => i !== idx) })}
+                                                            className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
+                                                            <X className="w-6 h-6" />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             ))}
                                             {newReview.reviewImages.length < 5 && (
                                                 <label className="w-20 h-20 rounded-xl border border-dashed border-slate-600 hover:border-white/50 bg-white/5 hover:bg-white/10 flex items-center justify-center cursor-pointer transition-all group">
                                                     <ImageIcon className="w-8 h-8 text-slate-500 group-hover:text-white transition-colors" />
-                                                    <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => {
-                                                        const files = Array.from(e.target.files);
-                                                        if (!files.length) return;
-                                                        const slots = 5 - newReview.reviewImages.length;
-                                                        Promise.all(files.slice(0, slots).map(f => new Promise(res => { const r = new FileReader(); r.onloadend = () => res(r.result); r.readAsDataURL(f); }))).then(imgs => { setNewReview(p => ({ ...p, reviewImages: [...p.reviewImages, ...imgs] })); });
-                                                    }} />
+                                                    <input 
+                                                        type="file" 
+                                                        disabled={isSubmitting}
+                                                        accept="image/*" 
+                                                        multiple 
+                                                        className="hidden" 
+                                                        onChange={(e) => {
+                                                            const selectedFiles = Array.from(e.target.files);
+                                                            if (!selectedFiles.length) return;
+                                                            const slots = 5 - newReview.reviewImages.length;
+                                                            const newFilesToKeep = selectedFiles.slice(0, slots);
+                                                            setNewReview(prev => ({ ...prev, reviewImages: [...prev.reviewImages, ...newFilesToKeep] }));
+                                                        }} 
+                                                    />
                                                 </label>
                                             )}
                                         </div>
                                     </div>
                                     {newReview.text.trim().length > 0 && (
-                                        <button type="submit" className="w-full bg-white hover:bg-slate-200 text-black font-bold py-4 rounded-xl transition-all active:scale-95 shadow-lg">Submit Review</button>
+                                        <button 
+                                            type="submit" 
+                                            disabled={isSubmitting}
+                                            className={`w-full font-bold py-4 rounded-xl transition-all active:scale-95 shadow-lg flex items-center justify-center gap-3 ${isSubmitting ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-white hover:bg-slate-200 text-black'}`}
+                                        >
+                                            {isSubmitting ? (
+                                                <>
+                                                    <div className="w-5 h-5 border-2 border-slate-500 border-t-transparent rounded-full animate-spin" />
+                                                    {uploadStatus || "Processing..."}
+                                                </>
+                                            ) : (
+                                                <>Submit Review</>
+                                            )}
+                                        </button>
                                     )}
                                 </form>
                             </div>

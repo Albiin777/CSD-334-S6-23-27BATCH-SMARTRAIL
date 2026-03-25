@@ -7,22 +7,37 @@ export async function getReviews(req, res) {
         // Fetch reviews from Firestore
         const reviewsSnapshot = await adminDb.collection('reviews')
             .where('trainNumber', '==', trainNumber)
-            .orderBy('created_at', 'desc')
             .get();
 
         const data = reviewsSnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
-        }));
+        })).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-        // Calculate Average
+        // Calculate Averages for Overall and Categories
         let averageRating = 0;
+        const categoryAverages = { cleanliness: 0, safety: 0, comfort: 0, schedule: 0, staff: 0 };
+        
         if (data && data.length > 0) {
             const sum = data.reduce((acc, curr) => acc + curr.rating, 0);
             averageRating = (sum / data.length).toFixed(1);
+
+            // Per category averages
+            Object.keys(categoryAverages).forEach(cat => {
+                const catSum = data.reduce((acc, curr) => {
+                    const r = curr.categoryRatings?.[cat] || curr.rating; // Fallback to overall rating for older reviews
+                    return acc + r;
+                }, 0);
+                categoryAverages[cat] = Number((catSum / data.length).toFixed(1));
+            });
         }
 
-        res.json({ success: true, reviews: data, averageRating: Number(averageRating) });
+        res.json({ 
+            success: true, 
+            reviews: data, 
+            averageRating: Number(averageRating),
+            categoryAverages 
+        });
     } catch (err) {
         console.error("Get reviews error:", err);
         res.status(500).json({ error: "Failed to fetch reviews" });
@@ -32,7 +47,7 @@ export async function getReviews(req, res) {
 export async function addReview(req, res) {
     try {
         const { trainNumber } = req.params;
-        const { rating, comment, userId } = req.body;
+        const { rating, comment, userId, userName, categoryRatings, images } = req.body;
 
         if (!rating || rating < 1 || rating > 5) {
             return res.status(400).json({ error: "Rating must be between 1 and 5" });
@@ -46,8 +61,11 @@ export async function addReview(req, res) {
         const newReview = {
             trainNumber,
             userId,
-            rating,
+            userName: userName || "Passenger",
+            rating, // This is the overall average calculated on frontend
+            categoryRatings: categoryRatings || { cleanliness: rating, safety: rating, comfort: rating, schedule: rating, staff: rating },
             comment,
+            reviewImages: images || [],
             created_at: new Date().toISOString()
         };
 

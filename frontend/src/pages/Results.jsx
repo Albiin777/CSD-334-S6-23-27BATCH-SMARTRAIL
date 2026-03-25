@@ -12,7 +12,13 @@ export default function Results() {
     const [error, setError] = useState(null);
     const [fareMap, setFareMap] = useState({});
     const [availMap, setAvailMap] = useState({});
-    const [classFilter, setClassFilter] = useState('All');
+    const determineInitialFilter = (c) => {
+      if (!c) return "All";
+      if (c === "General") return "GS";
+      const match = c.match(/\(([^)]+)\)$/);
+      return match ? match[1] : "All";
+    };
+    const [classFilter, setClassFilter] = useState(() => determineInitialFilter(searchParams.get("class")));
     const [acOnly, setAcOnly] = useState(false);
 
     const AC_CLASSES = ['3A', '2A', '1A', 'EC'];
@@ -26,7 +32,7 @@ export default function Results() {
     const toParam = searchParams.get("to") || "";
     const dateParam = searchParams.get("date") || "";
     const trainQueryParam = searchParams.get("q") || "";
-    const classParam = searchParams.get("class") || "General";
+    const classParam = searchParams.get("class") || "All Classes";
 
     // Helper to extract code from "Name (Code)"
     const extractCode = (str) => {

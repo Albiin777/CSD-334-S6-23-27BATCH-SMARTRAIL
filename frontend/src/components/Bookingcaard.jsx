@@ -23,7 +23,7 @@ export default function BookingCard() {
   const [passengers, setPassengers] = useState(1);
   const [showPassengers, setShowPassengers] = useState(false);
 
-  const [travelClass, setTravelClass] = useState("General");
+  const [travelClass, setTravelClass] = useState("All Classes");
   const [showClass, setShowClass] = useState(false);
 
   const [filters, setFilters] = useState({
@@ -160,8 +160,12 @@ export default function BookingCard() {
         return;
       }
 
-      // Navigate directly to Seat Layout bypassing Results
-      navigate(`/seat-layout/${extractedNumber}/${travelClass}?date=${selectedDate.toISOString()}&passengers=${passengers}`);
+      // If user selected "All Classes", navigate to Results to see all classes. Otherwise, go to specific class Seat Layout.
+      if (travelClass === "All Classes") {
+        navigate(`/results?mode=train&q=${extractedNumber}&date=${selectedDate.toISOString()}&passengers=${passengers}`);
+      } else {
+        navigate(`/seat-layout/${extractedNumber}/${travelClass}?date=${selectedDate.toISOString()}&passengers=${passengers}`);
+      }
     }
 
     setError("");
@@ -459,6 +463,7 @@ export default function BookingCard() {
                 {showClass && (
                   <div className="absolute left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 bottom-full mb-2 bg-white rounded-xl shadow-lg z-50 border border-[#D4D4D4] min-w-[180px]">
                     {[
+                      "All Classes",
                       "General",
                       "Sleeper (SL)",
                       "Second Sitting (2S)",

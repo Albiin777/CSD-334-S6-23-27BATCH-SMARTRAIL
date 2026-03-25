@@ -98,10 +98,19 @@ export default function PassengerDetails() {
   }, [train, classType, source, destination, isUnreservedClass]);
 
   const handleChange = (id, field, value) => {
+    if (field === "age" && value !== "") {
+      const num = parseInt(value);
+      if (num < 1 || num > 120) return;
+    }
     setPassengers(passengers.map(p => p.id === id ? { ...p, [field]: value } : p));
   };
 
   const handleSubmit = async () => {
+    const baseFare = farePerPerson * passengers.length;
+    const serviceTax = Math.round(baseFare * 0.05);
+    const convenienceFee = 20;
+    const totalAmount = baseFare + serviceTax + convenienceFee;
+
     const payload = {
       trainNumber: train.trainNumber,
       journeyDate,
@@ -109,6 +118,7 @@ export default function PassengerDetails() {
       source: extractCode(source || train.source),
       destination: extractCode(destination || train.destination),
       trainSchedule: train.schedule || [],
+      totalFare: totalAmount,
       passengers: passengers.map(p => ({
         name: p.name || `Passenger ${p.id + 1}`,
         age: p.age ? parseInt(p.age) : 25,
@@ -118,11 +128,6 @@ export default function PassengerDetails() {
         berthPreference: p.berth,
       })),
     };
-
-    const baseFare = farePerPerson * passengers.length;
-    const serviceTax = Math.round(baseFare * 0.05);
-    const convenienceFee = 20;
-    const totalAmount = baseFare + serviceTax + convenienceFee;
 
     navigate("/payment", {
       state: {
@@ -334,6 +339,8 @@ export default function PassengerDetails() {
                         <label className="text-xs text-gray-400 ml-1">Age</label>
                         <input
                           type="number"
+                          min="1"
+                          max="120"
                           placeholder="Age"
                           value={p.age}
                           onChange={(e) => handleChange(p.id, "age", e.target.value)}
