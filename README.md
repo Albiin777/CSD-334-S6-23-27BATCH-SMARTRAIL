@@ -14,6 +14,7 @@
 Smart Rail is a web-based railway booking and management platform designed to improve the passenger booking experience. The system allows users to search trains, view schedules, check seat availability, select seats visually, and book tickets through an interactive interface.
 
 An AI chatbot assists users with train search, waiting list prediction, and seat recommendations. The platform also provides management tools for railway staff and administrators.
+The repository link of AI chatbot:https://github.com/Albiin777/SmartRailchatbot
 
 ---
 
