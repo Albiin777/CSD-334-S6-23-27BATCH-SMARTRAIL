@@ -6,12 +6,28 @@ let _serviceAccountPath = path.resolve(process.cwd(), 'firebase-service-account.
 
 function initFirebase() {
   try {
-    if (!existsSync(_serviceAccountPath)) {
-      console.warn(`Firebase service account not found at ${_serviceAccountPath}.`);
-      return;
+    let serviceAccount = null;
+
+    // Priority 1: Environment variable (for Railway/Render/cloud deployments)
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      try {
+        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        console.log('Firebase: Using service account from FIREBASE_SERVICE_ACCOUNT env var.');
+      } catch (parseErr) {
+        console.error('Firebase: Failed to parse FIREBASE_SERVICE_ACCOUNT env var:', parseErr.message);
+      }
     }
 
-    const serviceAccount = JSON.parse(readFileSync(_serviceAccountPath, 'utf8'));
+    // Priority 2: Local JSON file (for local development)
+    if (!serviceAccount && existsSync(_serviceAccountPath)) {
+      serviceAccount = JSON.parse(readFileSync(_serviceAccountPath, 'utf8'));
+      console.log('Firebase: Using service account from local file.');
+    }
+
+    if (!serviceAccount) {
+      console.warn('Firebase: No service account found. Set FIREBASE_SERVICE_ACCOUNT env var or place firebase-service-account.json in the project root.');
+      return;
+    }
 
     // If already initialized, just return (token refresh is automatic with cert credentials)
     if (admin.apps.length) {
@@ -58,3 +74,4 @@ const adminDb = admin.apps.length ? admin.firestore() : null;
 const adminAuth = admin.apps.length ? admin.auth() : null;
 
 export { adminAuth, adminDb, FieldValue, getDb, getAuth };
+
