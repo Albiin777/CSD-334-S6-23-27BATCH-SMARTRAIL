@@ -214,16 +214,18 @@ export default function PaymentGateway() {
         // Set a global flag so App.jsx can hide the footer
         window.__SMARTRAIL_PAYMENT_SUCCESS = true;
         return (
-            <div className="min-h-screen relative flex items-center justify-center overflow-hidden" style={{ backgroundColor: '#4ab86d' }}>
+            <div className="fixed inset-0 z-[100] flex flex-col items-center overflow-y-auto scrollbar-hide py-10" style={{ backgroundColor: '#4ab86d' }}>
                 <style>
                     {`
                         @keyframes expandBg {
-                            0% { transform: scale(1); opacity: 1; border-radius: 50%; }
-                            100% { transform: scale(30); opacity: 1; border-radius: 50%; }
+                            0% { transform: translate(-50%, -50%) scale(1); opacity: 1; border-radius: 50%; }
+                            100% { transform: translate(-50%, -50%) scale(30); opacity: 1; border-radius: 50%; }
                         }
                         .bg-wave {
                             animation: expandBg 0.8s ease-in-out forwards;
-                            position: absolute;
+                            position: fixed;
+                            top: 50%;
+                            left: 50%;
                             width: 100px;
                             height: 100px;
                             background-color: #4ab86d;

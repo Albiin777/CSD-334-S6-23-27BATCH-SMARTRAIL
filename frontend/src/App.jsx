@@ -334,7 +334,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#0f172a] relative">
-      {!isTTEPage && <Header user={user} userRole={userRole} isAuthLoading={isAuthLoading} onLoginClick={() => setIsAuthOpen(true)} />}
+      {!isTTEPage && !isPaymentSuccess && <Header user={user} userRole={userRole} isAuthLoading={isAuthLoading} onLoginClick={() => setIsAuthOpen(true)} />}
 
       {isAuthOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
