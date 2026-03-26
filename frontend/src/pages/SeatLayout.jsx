@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/train.api";
 import { auth } from "../utils/firebaseClient";
@@ -10,10 +10,10 @@ const BERTH_LABEL = {
     WS: "WS", MS: "MS", AS: "AS" // window / middle / aisle (chair car)
 };
 
-function SeatButton({ seat, isSelected, isRecommended, onClick }) {
+const SeatButton = memo(({ seat, isSelected, isRecommended, onClick }) => {
     return (
         <button
-            onClick={onClick}
+            onClick={() => onClick(seat)}
             disabled={seat.isBooked}
             className={`
                 relative h-12 w-12 md:h-14 md:w-14 rounded-lg flex items-center justify-center text-sm font-bold transition-all duration-300
@@ -46,7 +46,7 @@ function SeatButton({ seat, isSelected, isRecommended, onClick }) {
             )}
         </button>
     );
-}
+});
 
 // ── Build row-grouped seat structure from rowStructure ────────────────────────
 // Returns: [ { leftSeats: [seat,...], sideSeats: [seat,...] } ]
@@ -332,33 +332,27 @@ export default function SeatLayout() {
         };
     }, [selectedSeats, trainNumber, journeyDate]);
 
-    const toggleSeat = async (seat, coachId) => {
-        if (seat.isBooked || isTrainSearchMode || isUnreservedClass) return;
+    const toggleSeat = useCallback(async (seat) => {
+        const coachId = selectedCoachId;
+        if (!coachId || seat.isBooked || isTrainSearchMode || isUnreservedClass) return;
         const seatId = `${coachId}-${seat.seatNumber}`;
         const isSelected = selectedSeats.some(s => s.uid === seatId);
 
         if (isSelected) {
             try {
-                // Optimistically update UI
                 setSelectedSeats(prev => prev.filter(s => s.uid !== seatId));
                 setLocallyHeldSeats(prev => prev.filter(id => id !== seatId));
-                // Call backend to unblock
                 await api.unblockSeat({ trainNumber, journeyDate, seatId, source, destination });
-                // After unblocking, refresh seat state to ensure UI is correct
                 await refreshUnavailableSeats();
             } catch (err) {
                 console.error("Failed to unblock seat", err);
-                // Still refresh seat state in case of error
                 await refreshUnavailableSeats();
             }
         } else {
             if (selectedSeats.length >= passengerCount) return;
-            // Optimistically mark as locally held
             setLocallyHeldSeats(prev => [...prev, seatId]);
             try {
-                // Call backend to block FIRST
                 const blockRes = await api.blockSeat({ trainNumber, journeyDate, seatId, source, destination });
-                // If successful, update UI
                 setSelectedSeats(prev => [...prev, {
                     uid: seatId,
                     seatNumber: seat.seatNumber,
@@ -367,7 +361,6 @@ export default function SeatLayout() {
                     holdExpiresAt: blockRes?.data?.expires_at || new Date(Date.now() + 5 * 60 * 1000).toISOString()
                 }]);
             } catch (err) {
-                // Remove from locally held if failed
                 setLocallyHeldSeats(prev => prev.filter(id => id !== seatId));
                 if (err?.status === 409) {
                     setLayoutData(prev => {
@@ -390,7 +383,7 @@ export default function SeatLayout() {
                 await refreshUnavailableSeats();
             }
         }
-    };
+    }, [selectedCoachId, selectedSeats, passengerCount, trainNumber, journeyDate, source, destination, isTrainSearchMode, isUnreservedClass]);
 
     // Keep hold states fresh: remove expired local selections and refresh unavailable seats periodically.
     useEffect(() => {
@@ -426,6 +419,39 @@ export default function SeatLayout() {
         });
     };
 
+    // Helper to get coaches sorted and filtered by the allocation algorithm
+    const getSortedCoaches = () => {
+        if (!layoutData?.coaches) return [];
+        
+        // If allocation data exists, use it to sort and filter by visibility/stability
+        if (coachAllocation && coachAllocation.length > 0) {
+            return coachAllocation
+                .filter(alloc => alloc.isVisible && alloc.status !== 'FULL')
+                .map(alloc => {
+                    const layoutInfo = layoutData.coaches.find(c => (c.coachId || c.coachNumber) === alloc.coachId);
+                    return { ...layoutInfo, ...alloc };
+                });
+        }
+        
+        // Fallback: original layout order (hidden if not search mode to prevent flickering)
+        return isTrainSearchMode ? layoutData.coaches : [];
+    };
+
+    const sortedCoaches = useMemo(() => getSortedCoaches(), [layoutData, coachAllocation, isTrainSearchMode]);
+    const currentCoach = useMemo(() => layoutData?.coaches?.find(c => c.coachId === selectedCoachId), [layoutData, selectedCoachId]);
+    
+    // Seat map logic (stability check for seats within the coach)
+    const rows = useMemo(() => currentCoach ? groupSeatsByRow(currentCoach.seats, currentCoach.rowStructure) : [], [currentCoach]);
+    const hasSide = useMemo(() => rows.some(r => r.sideSeats.length > 0), [rows]);
+
+    const isRecommendedSeat = useCallback((seatNumber) => {
+        if (!currentCoach || !currentCoach.totalSeats) return false;
+        const center = currentCoach.totalSeats / 2;
+        const range = currentCoach.totalSeats * 0.2;
+        return seatNumber >= (center - range) && seatNumber <= (center + range);
+    }, [currentCoach]);
+
+    // ── Early Returns (MUST be after all hooks) ──────────────────────────────
     if (loading) return (
         <div className="min-h-screen bg-[#0f172a] flex items-center justify-center text-gray-500">
             <div className="animate-spin text-4xl">...</div>
@@ -450,40 +476,8 @@ export default function SeatLayout() {
         </div>
     );
 
-    // Helper to get coaches sorted and filtered by the allocation algorithm
-    const getSortedCoaches = () => {
-        if (!layoutData?.coaches) return [];
-        
-        // If allocation data exists, use it to sort and filter by visibility/stability
-        if (coachAllocation && coachAllocation.length > 0) {
-            return coachAllocation
-                .filter(alloc => alloc.isVisible && alloc.status !== 'FULL')
-                .map(alloc => {
-                    const layoutInfo = layoutData.coaches.find(c => (c.coachId || c.coachNumber) === alloc.coachId);
-                    return { ...layoutInfo, ...alloc };
-                });
-        }
-        
-        // Fallback: original layout order (hidden if not search mode to prevent flickering)
-        return isTrainSearchMode ? layoutData.coaches : [];
-    };
-
-    const sortedCoaches = getSortedCoaches();
-    const currentCoach = layoutData?.coaches?.find(c => c.coachId === selectedCoachId);
-    
-    // Seat map logic (stability check for seats within the coach)
-    const rows = currentCoach ? groupSeatsByRow(currentCoach.seats, currentCoach.rowStructure) : [];
-    const hasSide = rows.some(r => r.sideSeats.length > 0);
-
-    const isRecommendedSeat = (seatNumber) => {
-        if (!currentCoach || !currentCoach.totalSeats) return false;
-        // Simple heuristic: center 40% of the coach is recommended for stability
-        const center = currentCoach.totalSeats / 2;
-        const range = currentCoach.totalSeats * 0.2; // 20% either side of center
-        return seatNumber >= (center - range) && seatNumber <= (center + range);
-    };
-
     return (
+
         <div style={{ backgroundColor: '#0f172a' }} className="min-h-screen pt-20 pb-20 px-4 font-sans text-gray-100 relative">
             <div className="max-w-6xl mx-auto">
 
@@ -725,7 +719,7 @@ export default function SeatLayout() {
                                                                         seat={seat}
                                                                         isSelected={isSelected}
                                                                         isRecommended={isRecommendedSeat(seat.seatNumber)}
-                                                                        onClick={() => toggleSeat(seat, selectedCoachId)}
+                                                                        onClick={toggleSeat}
                                                                     />
                                                         );
                                                     })}
@@ -743,7 +737,7 @@ export default function SeatLayout() {
                                                                         seat={seat}
                                                                         isSelected={isSelected}
                                                                         isRecommended={isRecommendedSeat(seat.seatNumber)}
-                                                                        onClick={() => toggleSeat(seat, selectedCoachId)}
+                                                                        onClick={toggleSeat}
                                                                     />
                                                                 );
                                                             })

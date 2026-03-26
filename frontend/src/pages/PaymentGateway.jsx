@@ -214,7 +214,7 @@ export default function PaymentGateway() {
         // Set a global flag so App.jsx can hide the footer
         window.__SMARTRAIL_PAYMENT_SUCCESS = true;
         return (
-            <div className="min-h-screen relative flex items-center justify-center overflow-hidden" style={{ backgroundColor: '#0f172a' }}>
+            <div className="min-h-screen relative flex items-center justify-center overflow-hidden" style={{ backgroundColor: '#4ab86d' }}>
                 <style>
                     {`
                         @keyframes expandBg {

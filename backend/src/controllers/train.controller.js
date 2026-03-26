@@ -1,7 +1,7 @@
 import { dataStore } from '../services/train.service.js';
 import { generateSeats } from '../services/seatLayout.service.js';
 import { computeCoachAllocations } from '../services/coachLoadBalance.service.js';
-import { adminDb } from '../config/firebaseAdmin.js';
+import { getDb } from '../config/firebaseAdmin.js';
 
 // Classes that are not bookable and should be hidden from seat layout/availability
 const NON_BOOKABLE = new Set(['SLR', 'PANTRY']);
@@ -91,15 +91,33 @@ export async function getTrainsBetween(req, res) {
             };
         });
 
+
         // 2. Filter by running day if date is provided
         if (date) {
             const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
             const dateOnly = date.substring(0, 10); // handle both YYYY-MM-DD and full ISO strings
             const [y, m, d] = dateOnly.split('-').map(Number);
-            const shortDay = DAYS[new Date(y, m - 1, d).getDay()];
+            const searchDay = new Date(y, m - 1, d);
+            const shortDay = DAYS[searchDay.getDay()];
             mappedResults = mappedResults.filter(t =>
                 !t.runningDays || t.runningDays.length === 0 || t.runningDays.includes(shortDay)
             );
+
+            // If search is for today, filter out trains whose source station departure time is before now (IST)
+            // Use IST explicitly since train schedules use Indian Standard Time
+            const nowUtc = new Date();
+            const istOffsetMs = 5.5 * 60 * 60 * 1000; // UTC+5:30
+            const nowIST = new Date(nowUtc.getTime() + istOffsetMs);
+            const isToday = (nowIST.getUTCFullYear() === y && (nowIST.getUTCMonth() + 1) === m && nowIST.getUTCDate() === d);
+            if (isToday) {
+                const pad = n => n.toString().padStart(2, '0');
+                const currentTime = pad(nowIST.getUTCHours()) + ':' + pad(nowIST.getUTCMinutes());
+                mappedResults = mappedResults.filter(t => {
+                    const depTime = t.fromStation?.departureTime || t.fromStation?.arrivalTime;
+                    if (!depTime) return true;
+                    return depTime > currentTime; // Strictly greater: if train departs NOW, consider it departed
+                });
+            }
         }
 
         // 3. Sort chronologically by departure time
@@ -256,7 +274,7 @@ export async function getAvailability(req, res) {
         Object.keys(availabilityMap).forEach(cls => counts[cls] = { cnf: 0, rac: 0, wl: 0 });
 
         if (date && fromIndex !== -1 && toIndex !== -1 && fromIndex < toIndex) {
-            const bookingsSnapshot = await adminDb.collection('pnr_bookings')
+            const bookingsSnapshot = await getDb().collection('pnr_bookings')
                 .where('trainNumber', '==', String(trainNumber))
                 .where('journeyDate', '==', date)
                 .get();
@@ -329,8 +347,8 @@ export async function getFare(req, res) {
 
     let overrides = null;
     try {
-        if (adminDb) {
-            const overrideDoc = await adminDb.collection('fare_overrides').doc(String(trainNumber)).get();
+        if (getDb()) {
+            const overrideDoc = await getDb().collection('fare_overrides').doc(String(trainNumber)).get();
             if (overrideDoc.exists) {
                 overrides = overrideDoc.data().fares;
             }
@@ -568,7 +586,7 @@ export async function getCoachAllocation(req, res) {
         // 4. Fetch passengers from Firestore for this train + date whose journey overlaps the requested segment
         let confirmedPassengers = [];
         if (date) {
-            const bookingsSnapshot = await adminDb.collection('pnr_bookings')
+            const bookingsSnapshot = await getDb().collection('pnr_bookings')
                 .where('trainNumber', '==', String(trainNumber))
                 .where('journeyDate', '==', date)
                 .where('classCode', '==', classCode)

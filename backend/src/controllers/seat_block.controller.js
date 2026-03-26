@@ -1,4 +1,4 @@
-import { adminDb } from '../config/firebaseAdmin.js';
+import { getDb } from '../config/firebaseAdmin.js';
 import bookingService from '../services/booking.service.js';
 
 const blockSeat = async (req, res) => {
@@ -20,8 +20,8 @@ const blockSeat = async (req, res) => {
              return res.status(409).json({ error: "This seat is already booked." });
         }
 
-        const result = await adminDb.runTransaction(async (transaction) => {
-            const blockRef = adminDb.collection('seat_blocks').doc(blockId);
+        const result = await getDb().runTransaction(async (transaction) => {
+            const blockRef = getDb().collection('seat_blocks').doc(blockId);
             const blockDoc = await transaction.get(blockRef);
 
             if (blockDoc.exists) {
@@ -69,7 +69,7 @@ const unblockSeat = async (req, res) => {
         }
 
         const blockId = `${trainNumber}_${journeyDate}_${seatId}`;
-        await adminDb.collection('seat_blocks').doc(blockId).delete();
+        await getDb().collection('seat_blocks').doc(blockId).delete();
 
         res.status(200).json({ success: true, message: "Seat unblocked successfully" });
     } catch (err) {
@@ -87,7 +87,7 @@ const getActiveBlocks = async (req, res) => {
             return res.status(400).json({ error: "Missing required query params: trainNumber, journeyDate" });
         }
 
-        const snapshot = await adminDb
+        const snapshot = await getDb()
             .collection('seat_blocks')
             .where('train_number', '==', String(trainNumber))
             .where('journey_date', '==', journeyDate)

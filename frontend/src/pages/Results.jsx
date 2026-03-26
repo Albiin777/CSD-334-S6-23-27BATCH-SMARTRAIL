@@ -101,14 +101,14 @@ export default function Results() {
                     if (isToday) {
                         const currentMinutes = now.getHours() * 60 + now.getMinutes();
                         filtered = filtered.filter(t => {
-                            // Extract departure time, handling both API responses (route vs train search)
                             const depTime = t.fromStation?.departureTime || t.departureTime || "00:00";
                             const [h, m] = depTime.split(':').map(Number);
                             const depMinutes = h * 60 + m;
-                            return depMinutes > currentMinutes;
+                            return depMinutes > currentMinutes; // Strict: trains departing NOW are considered departed
                         });
                     }
                 }
+
 
                 setResults(filtered);
 

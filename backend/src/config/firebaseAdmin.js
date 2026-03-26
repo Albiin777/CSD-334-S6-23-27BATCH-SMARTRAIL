@@ -2,33 +2,59 @@ import admin from 'firebase-admin';
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 
-let adminAuth;
-let adminDb;
+let _serviceAccountPath = path.resolve(process.cwd(), 'firebase-service-account.json');
 
-try {
-  // If the user provided the JSON, we need to load it. 
-  // We'll tell the user to save it as `firebase-service-account.json` in the root of backend/
-  const serviceAccountPath = path.resolve(process.cwd(), 'firebase-service-account.json');
-  
-  if (existsSync(serviceAccountPath)) {
-    const serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
-
-    if (!admin.apps.length) {
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-      });
+function initFirebase() {
+  try {
+    if (!existsSync(_serviceAccountPath)) {
+      console.warn(`Firebase service account not found at ${_serviceAccountPath}.`);
+      return;
     }
-    
-    adminAuth = admin.auth();
-    adminDb = admin.firestore();
+
+    const serviceAccount = JSON.parse(readFileSync(_serviceAccountPath, 'utf8'));
+
+    // If already initialized, just return (token refresh is automatic with cert credentials)
+    if (admin.apps.length) {
+      console.log('Firebase Admin already initialized, reusing existing app.');
+      return;
+    }
+
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+
     console.log('Firebase Admin Initialized successfully.');
-  } else {
-    console.warn(`Firebase Admin Service Account file not found at ${serviceAccountPath}. Custom Email OTP and Firestore will fail.`);
+  } catch (error) {
+    console.error('Failed to initialize Firebase Admin SDK:', error);
   }
-} catch (error) {
-  console.error('Failed to initialize Firebase Admin SDK:', error);
+}
+
+// Initialize once at startup
+initFirebase();
+
+/**
+ * Always use getDb() to get a fresh Firestore reference.
+ * Firebase Admin SDK automatically handles token refresh for cert-based credentials.
+ */
+function getDb() {
+  if (!admin.apps.length) {
+    initFirebase();
+  }
+  return admin.firestore();
+}
+
+function getAuth() {
+  if (!admin.apps.length) {
+    initFirebase();
+  }
+  return admin.auth();
 }
 
 const FieldValue = admin.firestore.FieldValue;
 
-export { adminAuth, adminDb, FieldValue };
+// Backward compat: adminDb and adminAuth still exported for existing imports,
+// but getDb()/getAuth() are more resilient.
+const adminDb = admin.apps.length ? admin.firestore() : null;
+const adminAuth = admin.apps.length ? admin.auth() : null;
+
+export { adminAuth, adminDb, FieldValue, getDb, getAuth };

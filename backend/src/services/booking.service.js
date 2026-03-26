@@ -1,4 +1,4 @@
-import { adminDb } from '../config/firebaseAdmin.js';
+import { getDb } from '../config/firebaseAdmin.js';
 import { dataStore } from '../../data/dataLoader.js';
 // PNR Generation Logic
 // Format: 10 Digits
@@ -33,7 +33,7 @@ const generateUniquePNR = async (sourceStation) => {
         pnr = `${zoneCode}${uniqueId}`;
 
         // Check DB for existing PNR
-        const snapshot = await adminDb.collection('pnr_bookings')
+        const snapshot = await getDb().collection('pnr_bookings')
             .where('pnr', '==', pnr)
             .limit(1)
             .get();
@@ -90,7 +90,7 @@ const bookTicket = async (trainNumber, source, destination, journeyDate, classCo
 
     // 2. Fetch Existing Bookings for this Train + Date + Class
     // 2. Fetch Existing Bookings from Firestore
-    const bookingsSnapshot = await adminDb.collection('pnr_bookings')
+    const bookingsSnapshot = await getDb().collection('pnr_bookings')
         .where('trainNumber', '==', String(trainNumber))
         .where('journeyDate', '==', journeyDate)
         .where('classCode', '==', classCode)
@@ -211,7 +211,7 @@ const bookTicket = async (trainNumber, source, destination, journeyDate, classCo
         created_at: new Date().toISOString()
     };
 
-    const docRef = await adminDb.collection('pnr_bookings').add(bookingDoc);
+    const docRef = await getDb().collection('pnr_bookings').add(bookingDoc);
 
     // --- NEW: Generate Notification ---
     // Extract the primary status of the booking to determine the notification type/message
@@ -246,7 +246,7 @@ const bookTicket = async (trainNumber, source, destination, journeyDate, classCo
     // If we have a userId, insert the notification
     if (userId) {
         try {
-            await adminDb.collection('notifications').add({
+            await getDb().collection('notifications').add({
                 userId: userId,
                 type: notifType,
                 title: notifTitle,
@@ -268,7 +268,7 @@ const bookTicket = async (trainNumber, source, destination, journeyDate, classCo
 // ---------------------------------------------
 const cancelBooking = async (pnr, passengerId = null) => {
     // 1. Fetch Booking
-    const snapshot = await adminDb.collection('pnr_bookings')
+    const snapshot = await getDb().collection('pnr_bookings')
         .where('pnr', '==', pnr)
         .limit(1)
         .get();
@@ -308,10 +308,10 @@ const cancelBooking = async (pnr, passengerId = null) => {
     }
 
     if (updatedPassengers.length === 0) {
-        await adminDb.collection('pnr_bookings').doc(booking.id).delete();
+        await getDb().collection('pnr_bookings').doc(booking.id).delete();
         return { message: 'Booking Cancelled Fully' };
     } else {
-        await adminDb.collection('pnr_bookings').doc(booking.id).update({
+        await getDb().collection('pnr_bookings').doc(booking.id).update({
             passengers: updatedPassengers
         });
         return { message: 'Passenger Cancelled' };
@@ -321,7 +321,7 @@ const cancelBooking = async (pnr, passengerId = null) => {
 // Start Promotion Chain
 const processPromotions = async (trainNumber, journeyDate, classCode, freedSeats, freedFrom, freedTo) => {
     // 1. Fetch current waiting list for this train/date/class
-    const snapshot = await adminDb.collection('pnr_bookings')
+    const snapshot = await getDb().collection('pnr_bookings')
         .where('trainNumber', '==', String(trainNumber))
         .where('journeyDate', '==', journeyDate)
         .where('classCode', '==', classCode)
@@ -395,9 +395,9 @@ const processPromotions = async (trainNumber, journeyDate, classCode, freedSeats
     }
 
     // Apply grouped updates
-    const batch = adminDb.batch();
+    const batch = getDb().batch();
     for (const [id, data] of Object.entries(bookingUpdates)) {
-        const ref = adminDb.collection('pnr_bookings').doc(id);
+        const ref = getDb().collection('pnr_bookings').doc(id);
         batch.update(ref, { passengers: data.passengers });
     }
     await batch.commit();
@@ -409,7 +409,7 @@ const processPromotions = async (trainNumber, journeyDate, classCode, freedSeats
 // CORE SERVICE: Get Booking Status
 // ---------------------------------------------
 const getBookingStatus = async (pnr) => {
-    const snapshot = await adminDb.collection('pnr_bookings')
+    const snapshot = await getDb().collection('pnr_bookings')
         .where('pnr', '==', pnr)
         .limit(1)
         .get();
@@ -427,7 +427,7 @@ const getBookingStatus = async (pnr) => {
 // ---------------------------------------------
 const getBookedSeatsList = async (trainNumber, journeyDate, source = null, destination = null) => {
     // 1. Fetch all bookings for this train and date
-    const snapshot = await adminDb.collection('pnr_bookings')
+    const snapshot = await getDb().collection('pnr_bookings')
         .where('trainNumber', '==', String(trainNumber))
         .where('journeyDate', '==', journeyDate)
         .get();
@@ -437,7 +437,7 @@ const getBookedSeatsList = async (trainNumber, journeyDate, source = null, desti
     // 2. Fetch all ACTIVE (non-expired) seat blocks
     // Note: Filter expiration in JS to avoid requiring a composite index in Firestore
     const now = new Date().toISOString();
-    const blockSnapshot = await adminDb.collection('seat_blocks')
+    const blockSnapshot = await getDb().collection('seat_blocks')
         .where('train_number', '==', String(trainNumber))
         .where('journey_date', '==', journeyDate)
         .get();
@@ -490,7 +490,7 @@ const getBookedSeatsList = async (trainNumber, journeyDate, source = null, desti
 // CORE SERVICE: Get Booking History (By User ID)
 // ---------------------------------------------
 const getBookingHistoryByUserId = async (userId) => {
-    const snapshot = await adminDb.collection('pnr_bookings')
+    const snapshot = await getDb().collection('pnr_bookings')
         .where('user_id', '==', userId)
         .orderBy('journeyDate', 'desc')
         .get();
