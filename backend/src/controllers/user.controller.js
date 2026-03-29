@@ -132,7 +132,7 @@ export const sendCustomEmailOTP = async (req, res) => {
         res.status(200).json({ message: 'OTP sent successfully to ' + email });
     } catch (error) {
         console.error('Send Custom OTP Error:', error);
-        res.status(500).json({ error: 'Failed to send OTP email' });
+        res.status(500).json({ error: 'MAIL ERROR: ' + error.message });
     }
 };
 
