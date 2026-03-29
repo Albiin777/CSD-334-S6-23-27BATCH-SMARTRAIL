@@ -606,7 +606,7 @@ export default function Auth({ onClose }) {
 
                 {/* Password Input (Hidden if using OTP login or Email signup) */}
 
-                {(!useOtpLogin && !(EMAIL_REGEX.test(identifier))) && (
+                {(!useOtpLogin) && (
                   <div className="relative group animate-in fade-in slide-in-from-top-2">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                       <Lock className="w-5 h-5 text-gray-400" />
