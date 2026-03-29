@@ -210,6 +210,8 @@ export default function App() {
     location.pathname.startsWith('/results') ||
     location.pathname.startsWith('/passenger-details') ||
     location.pathname.startsWith('/admin') ||
+    location.pathname.startsWith('/my-account') ||
+    location.pathname.startsWith('/my-bookings') ||
     location.pathname.startsWith('/tte')) && !isPaymentSuccess;
 
   // Pages that manage their own top spacing (no global pt-[70px] needed)

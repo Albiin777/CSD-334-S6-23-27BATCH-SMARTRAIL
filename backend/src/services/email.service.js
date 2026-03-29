@@ -1,23 +1,33 @@
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const resend = new Resend(process.env.RESEND_API_KEY || 're_placeholder');
+const transporter = nodemailer.createTransport({
+    host: 'smtp-relay.brevo.com',
+    port: 587,
+    secure: false, // true for 465, false for other ports
+    auth: {
+        user: process.env.BREVO_SMTP_USER,
+        pass: process.env.BREVO_SMTP_PASS
+    }
+});
+
+const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'support@smartrail.com';
 
 /**
  * Send an OTP email for authentication
  */
 export const sendOTPEmail = async (email, otpCode) => {
     try {
-        if (!process.env.RESEND_API_KEY) {
-            console.error('[Email Service] RESEND_API_KEY is missing');
-            throw new Error('Email service API key not configured');
+        if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS) {
+            console.error('[Email Service] BREVO_SMTP_USER or PASS is missing');
+            throw new Error('Email service SMTP not configured');
         }
 
-        const { data, error } = await resend.emails.send({
-            from: 'SmartRail <onboarding@resend.dev>', // Change to verified domain when available
-            to: [email],
+        const info = await transporter.sendMail({
+            from: `"SmartRail" <${SENDER_EMAIL}>`,
+            to: email,
             subject: 'SmartRail Verification Code',
             html: `
                 <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto; background-color: #f9fafb; border-radius: 20px; border: 1px solid #e5e7eb;">
@@ -41,12 +51,7 @@ export const sendOTPEmail = async (email, otpCode) => {
             `,
         });
 
-        if (error) {
-            console.error('[Resend Error]:', error);
-            throw new Error(error.message || 'Failed to send email');
-        }
-
-        return data;
+        return info;
     } catch (err) {
         console.error('[Email Service Error]:', err);
         throw err;
@@ -60,11 +65,11 @@ export const sendBookingConfirmationEmail = async (email, bookingDetails) => {
     const { pnr, trainNumber, journeyDate, source, destination, passengers } = bookingDetails;
     
     try {
-        if (!process.env.RESEND_API_KEY) return null;
+        if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS) return null;
 
-        const { data, error } = await resend.emails.send({
-            from: 'SmartRail <bookings@resend.dev>',
-            to: [email],
+        const info = await transporter.sendMail({
+            from: `"SmartRail" <${SENDER_EMAIL}>`,
+            to: email,
             subject: `SmartRail Booking Confirmation - PNR: ${pnr}`,
             html: `
                 <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto; background-color: #f3f4f6; border-radius: 24px;">
@@ -122,8 +127,7 @@ export const sendBookingConfirmationEmail = async (email, bookingDetails) => {
             `,
         });
 
-        if (error) throw new Error(error.message);
-        return data;
+        return info;
     } catch (err) {
         console.error('[Email Service Error]:', err);
         throw err;
