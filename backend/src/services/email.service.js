@@ -1,17 +1,6 @@
-import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 
 dotenv.config();
-
-const transporter = nodemailer.createTransport({
-    host: 'smtp-relay.brevo.com',
-    port: 465,
-    secure: true, // Bypass rigorous port 587 cloud firewalls
-    auth: {
-        user: process.env.BREVO_SMTP_USER,
-        pass: process.env.BREVO_SMTP_PASS
-    }
-});
 
 const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'support@smartrail.com';
 
@@ -20,16 +9,16 @@ const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'support@smartrail.com';
  */
 export const sendOTPEmail = async (email, otpCode) => {
     try {
-        if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS) {
-            console.error('[Email Service] BREVO_SMTP_USER or PASS is missing');
-            throw new Error('Email service SMTP not configured');
+        if (!process.env.BREVO_API_KEY) {
+            console.error('[Email Service] BREVO_API_KEY is missing');
+            throw new Error('Email service API key not configured');
         }
 
-        const info = await transporter.sendMail({
-            from: `"SmartRail" <${SENDER_EMAIL}>`,
-            to: email,
+        const payload = {
+            sender: { email: SENDER_EMAIL, name: "SmartRail" },
+            to: [{ email: email }],
             subject: 'SmartRail Verification Code',
-            html: `
+            htmlContent: `
                 <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto; background-color: #f9fafb; border-radius: 20px; border: 1px solid #e5e7eb;">
                     <div style="text-align: center; margin-bottom: 30px;">
                         <h1 style="color: #111827; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">SmartRail</h1>
@@ -48,10 +37,25 @@ export const sendOTPEmail = async (email, otpCode) => {
                     
                     <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 30px;"> &copy; 2026 SmartRail. All rights reserved. </p>
                 </div>
-            `,
+            `
+        };
+
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+                'accept': 'application/json',
+                'api-key': process.env.BREVO_API_KEY,
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify(payload)
         });
 
-        return info;
+        if (!response.ok) {
+            const errorData = await response.text();
+            throw new Error(`Brevo API Error: ${errorData}`);
+        }
+
+        return await response.json();
     } catch (err) {
         console.error('[Email Service Error]:', err);
         throw err;
@@ -65,13 +69,13 @@ export const sendBookingConfirmationEmail = async (email, bookingDetails) => {
     const { pnr, trainNumber, journeyDate, source, destination, passengers } = bookingDetails;
     
     try {
-        if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS) return null;
+        if (!process.env.BREVO_API_KEY) return null;
 
-        const info = await transporter.sendMail({
-            from: `"SmartRail" <${SENDER_EMAIL}>`,
-            to: email,
+        const payload = {
+            sender: { email: SENDER_EMAIL, name: "SmartRail" },
+            to: [{ email: email }],
             subject: `SmartRail Booking Confirmation - PNR: ${pnr}`,
-            html: `
+            htmlContent: `
                 <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto; background-color: #f3f4f6; border-radius: 24px;">
                     <div style="text-align: center; margin-bottom: 30px;">
                         <h1 style="color: #1f2937; margin: 0; font-size: 28px; font-weight: 800;">Ticket Confirmed! 🎉</h1>
@@ -124,10 +128,21 @@ export const sendBookingConfirmationEmail = async (email, bookingDetails) => {
                         <br/>&copy; 2026 SmartRail.
                     </p>
                 </div>
-            `,
+            `
+        };
+
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+                'accept': 'application/json',
+                'api-key': process.env.BREVO_API_KEY,
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify(payload)
         });
 
-        return info;
+        if (!response.ok) throw new Error("Failed to send HTTP push email");
+        return await response.json();
     } catch (err) {
         console.error('[Email Service Error]:', err);
         throw err;
