@@ -5,8 +5,8 @@ dotenv.config();
 
 const transporter = nodemailer.createTransport({
     host: 'smtp-relay.brevo.com',
-    port: 587,
-    secure: false, // true for 465, false for other ports
+    port: 465,
+    secure: true, // Bypass rigorous port 587 cloud firewalls
     auth: {
         user: process.env.BREVO_SMTP_USER,
         pass: process.env.BREVO_SMTP_PASS
