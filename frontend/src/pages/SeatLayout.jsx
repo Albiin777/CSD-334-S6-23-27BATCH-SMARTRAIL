@@ -560,7 +560,15 @@ export default function SeatLayout() {
                                                 let num = parseInt(val);
                                                 if (num > 6) num = 6;
                                                 setPassengerCount(num);
-                                                if (selectedSeats.length > num) setSelectedSeats(s => s.slice(0, num));
+                                                // Clear ALL selected seats when passenger count changes to avoid stale selection
+                                                if (selectedSeats.length > 0) {
+                                                    const seatsToUnblock = [...selectedSeats];
+                                                    setSelectedSeats([]);
+                                                    setLocallyHeldSeats([]);
+                                                    seatsToUnblock.forEach(seat => {
+                                                        api.unblockSeat({ trainNumber, journeyDate, seatId: seat.uid }).catch(() => {});
+                                                    });
+                                                }
                                             }}
                                             onBlur={() => {
                                                 if (!passengerCount || passengerCount < 1) setPassengerCount(1);
