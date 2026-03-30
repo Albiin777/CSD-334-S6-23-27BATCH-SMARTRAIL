@@ -286,7 +286,56 @@ export const checkIdentifier = async (req, res) => {
     }
 };
 
+
+export const verifyCustomEmailUpdateOTP = async (req, res) => {
+    try {
+        const { email, token, uid } = req.body;
+        if (!email || !token || !uid) return res.status(400).json({ error: 'Email, OTP, and UID required' });
+        
+        const emailLower = email.toLowerCase();
+        
+        // Check OTP
+        const otpDoc = await adminDb.collection('email_otps').doc(emailLower).get();
+        if (!otpDoc.exists) {
+            return res.status(400).json({ error: 'Invalid or expired OTP' });
+        }
+        
+        const data = otpDoc.data();
+        if (data.otp_code !== token) {
+            return res.status(400).json({ error: 'Incorrect OTP code' });
+        }
+        if (new Date(data.expires_at) < new Date()) {
+            return res.status(400).json({ error: 'OTP has expired' });
+        }
+        
+        // Clear used OTP
+        await adminDb.collection('email_otps').doc(emailLower).delete();
+        
+        // Update the user's email natively inside Firebase Authentication
+        await adminAuth.updateUser(uid, {
+            email: emailLower,
+            emailVerified: true
+        });
+
+        // Update profile document strictly inside Firestore
+        await adminDb.collection('profiles').doc(uid).set({ email: emailLower }, { merge: true });
+        
+        // Because changing an email invalidates the user's current session tokens, mint a fresh one securely!
+        const customToken = await adminAuth.createCustomToken(uid);
+        
+        res.status(200).json({ message: 'Email updated successfully', customToken });
+    } catch (error) {
+        console.error('Verify Custom Email Update OTP Error:', error);
+        if (error.code === 'auth/email-already-exists') {
+             res.status(400).json({ error: 'This email is already linked directly to another account.' });
+        } else {
+             res.status(500).json({ error: 'Failed strictly to update email on server.' });
+        }
+    }
+};
+
 export default {
+    verifyCustomEmailUpdateOTP,
     signupWithEmail,
     loginWithEmail,
     getProfile,

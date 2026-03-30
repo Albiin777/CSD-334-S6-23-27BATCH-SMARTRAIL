@@ -5,6 +5,7 @@ import {
     getProfile,
     sendCustomEmailOTP,
     verifyCustomEmailOTP,
+    verifyCustomEmailUpdateOTP,
     syncProfile,
     checkIdentifier
 } from '../controllers/user.controller.js';
@@ -19,6 +20,7 @@ router.get('/profile', authenticateToken, getProfile);
 // Custom Email OTP Routes
 router.post('/send-custom-email-otp', sendCustomEmailOTP);
 router.post('/verify-custom-email-otp', verifyCustomEmailOTP);
+router.post('/verify-custom-email-update-otp', verifyCustomEmailUpdateOTP);
 
 // Profile Sync
 router.post('/sync-profile', syncProfile);
