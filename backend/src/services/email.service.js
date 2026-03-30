@@ -19,30 +19,80 @@ export const sendOTPEmail = async (email, otpCode) => {
             to: [{ email: email }],
             subject: 'SmartRail Verification Code',
             htmlContent: `
-                <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto; background-color: #f9fafb; border-radius: 20px; border: 1px solid #e5e7eb;">
+                <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto; background-color: #f3f4f6; border-radius: 24px;">
                     <div style="text-align: center; margin-bottom: 30px;">
-                        <h1 style="color: #111827; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">SmartRail</h1>
-                        <p style="color: #6b7280; font-size: 14px; margin-top: 4px;">Intelligent Network Operations</p>
-                    </div>
-                    
-                    <div style="background-color: #ffffff; padding: 32px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
-                        <p style="color: #374151; font-size: 16px; line-height: 24px;">To finish setting up your account, please enter the following verification code:</p>
-                        
-                        <div style="text-align: center; margin: 32px 0;">
-                            <h1 style="color: #4F46E5; letter-spacing: 12px; font-size: 42px; font-weight: 900; margin: 0; display: inline-block;">${otpCode}</h1>
-                        </div>
-                        
-                        <p style="color: #6b7280; font-size: 14px; line-height: 20px; border-top: 1px solid #f3f4f6; pt-20px; margin-top: 24px; padding-top: 24px;"> This code is valid for 10 minutes. If you did not request this code, please ignore this message. </p>
-                    
-                        <!-- QR Code Section -->
-                        <div style="margin-top: 30px; padding-top: 20px; border-top: 2px dashed #e5e7eb; text-align: center;">
-                            <p style="color: #6b7280; font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 20px;">TTE Verification QR</p>
-                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${pnr}" alt="PNR QR Code" width="150" height="150" style="border-radius: 12px; border: 6px solid #f9fafb; outline: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);" />
-                            <p style="color: #111827; font-size: 18px; font-weight: 900; margin-top: 15px; letter-spacing: 4px;">${pnr}</p>
-                        </div>
+                        <h1 style="color: #1f2937; margin: 0; font-size: 28px; font-weight: 800;">Ticket Confirmed</h1>
+                        <p style="color: #4b5563; font-size: 16px; margin-top: 5px;">Get ready for your journey with SmartRail</p>
                     </div>
 
-                    <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 30px;"> &copy; 2026 SmartRail. All rights reserved. </p>
+                    <div style="background-color: #ffffff; padding: 40px; border-radius: 20px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
+                        
+                        <!-- PNR & TRAIN NUMBER TABLE -->
+                        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="border-bottom: 2px dashed #e5e7eb; padding-bottom: 20px; margin-bottom: 20px;">
+                            <tr>
+                                <td align="left" valign="top">
+                                    <p style="color: #6b7280; font-size: 12px; font-weight: 700; text-transform: uppercase; margin: 0 0 4px 0;">PNR Number</p>
+                                    <p style="color: #111827; font-size: 22px; font-weight: 800; margin: 0;">${pnr}</p>
+                                </td>
+                                <td align="right" valign="top">
+                                    <p style="color: #6b7280; font-size: 12px; font-weight: 700; text-transform: uppercase; margin: 0 0 4px 0;">Train No</p>
+                                    <p style="color: #111827; font-size: 22px; font-weight: 800; margin: 0;">#${trainNumber}</p>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <!-- FROM / TO TABLE -->
+                        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+                            <tr>
+                                <td align="left" width="40%">
+                                    <p style="color: #6b7280; font-size: 11px; font-weight: 700; margin: 0 0 4px 0;">FROM</p>
+                                    <p style="color: #111827; font-size: 18px; font-weight: 700; margin: 0;">${source}</p>
+                                </td>
+                                <td align="center" width="20%">
+                                    <div style="width: 100%; height: 2px; background-color: #e5e7eb; margin-top: 10px;"></div>
+                                </td>
+                                <td align="right" width="40%">
+                                    <p style="color: #6b7280; font-size: 11px; font-weight: 700; margin: 0 0 4px 0;">TO</p>
+                                    <p style="color: #111827; font-size: 18px; font-weight: 700; margin: 0;">${destination}</p>
+                                </td>
+                            </tr>
+                        </table>
+                        
+                        <p style="color: #374151; font-size: 15px; font-weight: 600; text-align: center; margin: 0 0 30px 0;">Date: ${journeyDate}</p>
+
+                        <!-- PASSENGER DETAILS -->
+                        <p style="color: #111827; font-size: 14px; font-weight: 700; border-top: 1px solid #f3f4f6; padding-top: 20px; margin: 0 0 15px 0;">PASSENGER DETAILS</p>
+                        
+                        <table width="100%" border="0" cellpadding="0" cellspacing="0">
+                            ${passengers.map(p => `
+                                <tr>
+                                    <td style="padding-bottom: 10px;">
+                                        <div style="background-color: #f9fafb; padding: 15px; border-radius: 12px; border: 1px solid #e5e7eb;">
+                                            <p style="color: #1f2937; font-size: 16px; font-weight: 700; margin: 0 0 8px 0;">${p.name}</p>
+                                            <p style="color: #4f46e5; font-size: 14px; font-weight: 800; margin: 0;">${p.status} - ${p.seatNumber || 'W/L'}</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </table>
+
+                        <!-- TTE VERIFICATION QR -->
+                        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top: 20px; border-top: 2px dashed #e5e7eb; padding-top: 30px;">
+                            <tr>
+                                <td align="center">
+                                    <p style="color: #6b7280; font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 15px 0;">TTE Verification QR</p>
+                                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${pnr}" alt="PNR QR Code" width="160" height="160" style="display: block; margin: 0 auto; border-radius: 12px; border: 4px solid #f9fafb; outline: 1px solid #e5e7eb;" />
+                                    <p style="color: #111827; font-size: 18px; font-weight: 900; margin: 15px 0 0 0; letter-spacing: 4px;">${pnr}</p>
+                                </td>
+                            </tr>
+                        </table>
+
+                    </div>
+
+                    <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 30px 0 0 0; line-height: 1.5;">
+                        Please carry a valid ID proof during your journey. Wish you a happy journey!
+                        <br/>&copy; 2026 SmartRail.
+                    </p>
                 </div>
             `
         };
