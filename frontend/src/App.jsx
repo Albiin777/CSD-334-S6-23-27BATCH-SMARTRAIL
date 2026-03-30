@@ -327,10 +327,25 @@ export default function App() {
     // 3. Removed global reload redirect so that specific pages can handle their own recovery / session storage via React Router state.
   }, []);
 
-  // Scroll to top on route navigation so pages like My Account open from the top section.
+  // Scroll to top on route navigation, UNLESS we have a scrollTo target in location state
   useEffect(() => {
+    if (location.state?.scrollTo) return; // let the scrollTo effect handle it
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [location.pathname]);
+
+  // Scroll to a specific section when navigating with state.scrollTo
+  useEffect(() => {
+    if (!location.state?.scrollTo) return;
+    const target = location.state.scrollTo;
+    // Use a small delay to let the page render first
+    const timer = setTimeout(() => {
+      const el = document.getElementById(target);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [location.state]);
 
   const isTTEPage = location.pathname.startsWith('/tte');
 
