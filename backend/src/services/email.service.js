@@ -33,8 +33,15 @@ export const sendOTPEmail = async (email, otpCode) => {
                         </div>
                         
                         <p style="color: #6b7280; font-size: 14px; line-height: 20px; border-top: 1px solid #f3f4f6; pt-20px; margin-top: 24px; padding-top: 24px;"> This code is valid for 10 minutes. If you did not request this code, please ignore this message. </p>
-                    </div>
                     
+                        <!-- QR Code Section -->
+                        <div style="margin-top: 30px; padding-top: 20px; border-top: 2px dashed #e5e7eb; text-align: center;">
+                            <p style="color: #6b7280; font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 20px;">TTE Verification QR</p>
+                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${pnr}" alt="PNR QR Code" width="150" height="150" style="border-radius: 12px; border: 6px solid #f9fafb; outline: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);" />
+                            <p style="color: #111827; font-size: 18px; font-weight: 900; margin-top: 15px; letter-spacing: 4px;">${pnr}</p>
+                        </div>
+                    </div>
+
                     <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 30px;"> &copy; 2026 SmartRail. All rights reserved. </p>
                 </div>
             `
